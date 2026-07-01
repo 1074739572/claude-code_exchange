@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Agent runtime artifacts (created in cwd when running)
+.transcripts/
+.task_outputs/
+.tasks/
+.mailboxes/
+.worktrees/
+.memory/
+.scheduled_tasks.json
+
+# IDE
+.idea/
+.vscode/
