@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from harness.hooks import trigger_hooks
-from harness.settings import MODEL, WORKDIR, client
+from harness.llm import create_message
+from harness.models import get_model
+from harness.settings import WORKDIR
 from harness.tools.dispatch import call_tool_handler, extract_text, has_tool_use
 from harness.tools.filesystem import run_bash, run_edit, run_glob, run_read, run_write
 
@@ -84,8 +86,8 @@ SUB_HANDLERS = {
 def spawn_subagent(description: str) -> str:
     messages = [{"role": "user", "content": description}]
     for _ in range(30):
-        response = client.messages.create(
-            model=MODEL,
+        response = create_message(
+            model_id=get_model(),
             system=SUB_SYSTEM,
             messages=messages,
             tools=SUB_TOOLS,

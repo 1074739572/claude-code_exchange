@@ -5,6 +5,7 @@ from __future__ import annotations
 from harness.agent.cron import run_cancel_cron, run_list_crons, run_schedule_cron
 from harness.agent.subagent import spawn_subagent
 from harness.mcp.pool import assemble_tool_pool, connect_mcp
+from harness.rag.tools import run_rag_index, run_rag_search, run_rag_status
 from harness.skills_loader import load_skill
 from harness.tasks import (
     claim_task,
@@ -368,6 +369,52 @@ BUILTIN_TOOLS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "rag_index",
+        "description": (
+            "Index local reference documents for RAG (.md/.txt/.docx). "
+            "Default corpus: files/样例. Parses, chunks, and builds a local vector index."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File or directory to index. Empty = files/样例",
+                }
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "rag_search",
+        "description": (
+            "Semantic search over indexed reference documents. "
+            "Use before writing thesis/report sections to retrieve style and structure examples."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer"},
+                "source": {
+                    "type": "string",
+                    "description": "Optional source filename filter",
+                },
+                "chapter": {
+                    "type": "string",
+                    "description": "Optional chapter title filter (exact match)",
+                },
+                "include_captions": {"type": "boolean"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "rag_status",
+        "description": "Show local RAG index status: sources, chunk counts, embedding model.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 BUILTIN_HANDLERS = {
@@ -397,6 +444,9 @@ BUILTIN_HANDLERS = {
     "remove_worktree": remove_worktree,
     "keep_worktree": keep_worktree,
     "connect_mcp": connect_mcp,
+    "rag_index": run_rag_index,
+    "rag_search": run_rag_search,
+    "rag_status": run_rag_status,
 }
 
 

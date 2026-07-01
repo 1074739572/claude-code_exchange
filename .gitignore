@@ -15,7 +15,8 @@ venv/
 .worktrees/
 .memory/
 .scheduled_tasks.json
+.rag/
 
-# IDE
-.idea/
-.vscode/
+# Local reference corpus (large docx etc.)
+/files
+

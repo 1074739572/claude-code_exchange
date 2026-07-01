@@ -1,0 +1,41 @@
+{
+  "default": "deepseek-v4-flash",
+  "models": [
+    {
+      "id": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "label": "DeepSeek V4 Flash (fast)",
+      "api_model": "deepseek-v4-flash"
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "provider": "deepseek",
+      "label": "DeepSeek V4 Pro (stronger)",
+      "api_model": "deepseek-v4-pro"
+    },
+    {
+      "id": "glm-4-flash",
+      "provider": "zhipu",
+      "label": "智谱 GLM-4 Flash",
+      "api_model": "glm-4-flash"
+    },
+    {
+      "id": "glm-4-plus",
+      "provider": "zhipu",
+      "label": "智谱 GLM-4 Plus",
+      "api_model": "glm-4-plus"
+    },
+    {
+      "id": "qwen3.7-plus",
+      "provider": "qwen",
+      "label": "通义千问 Plus",
+      "api_model": "qwen3.7-plus"
+    },
+    {
+      "id": "qwen-max",
+      "provider": "qwen",
+      "label": "通义千问 Max",
+      "api_model": "qwen-max"
+    }
+  ]
+}

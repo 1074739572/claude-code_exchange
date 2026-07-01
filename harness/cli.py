@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import harness.console as console
 from harness.agent.cron import consume_cron_queue
@@ -10,6 +11,8 @@ from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.loop import agent_loop, agent_lock
 from harness.mcp.pool import bootstrap_mcp_servers
+from harness.models import format_model_status, handle_model_command
+from harness.providers.config import load_providers, provider_key_status
 from harness.settings import CLI_PROMPT
 from harness.teams import consume_lead_inbox
 
@@ -44,6 +47,14 @@ def cron_autorun_loop(history: list, context: dict) -> None:
 def run_cli() -> None:
     console.CLI_ACTIVE = True
     print("improved_harness: comprehensive agent")
+    print(format_model_status())
+    ready = [
+        load_providers()[pid].label
+        for pid, ok in provider_key_status().items()
+        if ok
+    ]
+    if ready:
+        print(f"Providers ready: {', '.join(ready)}")
     print("Enter a question, press Enter to send. Type q to quit.\n")
 
     bootstrap_results = bootstrap_mcp_servers()
@@ -64,6 +75,10 @@ def run_cli() -> None:
             break
         if query.strip().lower() in ("q", "exit", ""):
             break
+        if query.strip().lower().startswith("/model"):
+            print(handle_model_command(query))
+            print()
+            continue
         trigger_hooks("UserPromptSubmit", query)
         turn_start = len(history)
         history.append({"role": "user", "content": query})

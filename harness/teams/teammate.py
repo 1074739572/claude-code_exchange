@@ -8,12 +8,12 @@ import threading
 import time
 from pathlib import Path
 
+from harness.llm import create_message
+from harness.models import get_model
 from harness.settings import (
     IDLE_POLL_INTERVAL,
     IDLE_TIMEOUT,
-    MODEL,
     WORKTREES_DIR,
-    client,
 )
 from harness.tasks import claim_task, complete_task, list_tasks, load_task, scan_unclaimed_tasks
 from harness.teams.bus import BUS, active_teammates
@@ -262,8 +262,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                             }
                         )
                 try:
-                    response = client.messages.create(
-                        model=MODEL,
+                    response = create_message(
+                        model_id=get_model(),
                         system=system,
                         messages=messages[-20:],
                         tools=sub_tools,

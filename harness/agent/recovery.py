@@ -10,7 +10,6 @@ from harness.settings import (
     FALLBACK_MODEL,
     MAX_RETRIES,
     MAX_CONSECUTIVE_529,
-    PRIMARY_MODEL,
 )
 
 
@@ -20,7 +19,7 @@ class RecoveryState:
         self.recovery_count = 0
         self.consecutive_529 = 0
         self.has_attempted_reactive_compact = False
-        self.current_model = PRIMARY_MODEL
+        self.fallback_model: str | None = None
 
 
 def retry_delay(attempt: int) -> float:
@@ -48,7 +47,7 @@ def with_retry(fn, state: RecoveryState):
             if "overloaded" in name or "529" in msg or "overloaded" in msg:
                 state.consecutive_529 += 1
                 if state.consecutive_529 >= MAX_CONSECUTIVE_529 and FALLBACK_MODEL:
-                    state.current_model = FALLBACK_MODEL
+                    state.fallback_model = FALLBACK_MODEL
                     state.consecutive_529 = 0
                     print(f"  \033[31m[529] switching to {FALLBACK_MODEL}\033[0m")
                 delay = retry_delay(attempt)

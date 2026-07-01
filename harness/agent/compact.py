@@ -6,15 +6,15 @@ import json
 import time
 from pathlib import Path
 
+from harness.models import get_model
 from harness.settings import (
     CONTEXT_LIMIT,
     KEEP_RECENT_TOOL_RESULTS,
     PERSIST_THRESHOLD,
     TOOL_RESULTS_DIR,
     TRANSCRIPT_DIR,
-    client,
-    MODEL,
 )
+from harness.llm import create_message
 from harness.tools.dispatch import extract_text
 
 
@@ -152,8 +152,8 @@ def summarize_history(messages: list) -> str:
         "and user constraints.\n\n"
         + conversation
     )
-    response = client.messages.create(
-        model=MODEL,
+    response = create_message(
+        model_id=get_model(),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=2000,
     )

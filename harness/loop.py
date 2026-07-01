@@ -19,13 +19,14 @@ from harness.agent.recovery import (
 )
 from harness.context import update_context
 from harness.hooks import trigger_hooks
+from harness.llm import create_message
+from harness.models import get_model
 from harness.prompts import assemble_system_prompt
 from harness.settings import (
     CONTINUATION_PROMPT,
     DEFAULT_MAX_TOKENS,
     ESCALATED_MAX_TOKENS,
     MAX_RECOVERY_RETRIES,
-    client,
 )
 from harness.tools.dispatch import call_tool_handler, has_tool_use
 from harness.tools.registry import get_tool_pool
@@ -36,9 +37,10 @@ agent_lock = threading.Lock()
 
 def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, max_tokens: int):
     system = assemble_system_prompt(context)
+    model_id = state.fallback_model or get_model()
     return with_retry(
-        lambda: client.messages.create(
-            model=state.current_model,
+        lambda: create_message(
+            model_id=model_id,
             system=system,
             messages=messages,
             tools=tools,

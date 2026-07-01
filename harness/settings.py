@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -13,12 +12,12 @@ WORKDIR = Path.cwd()
 
 load_dotenv(PACKAGE_ROOT / ".env")
 load_dotenv(override=True)
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 SKILLS_DIR = PACKAGE_ROOT / "skills"
 CONFIG_DIR = PACKAGE_ROOT / "config"
 MCP_CONFIG_PATH = CONFIG_DIR / "mcp.json"
+PROVIDERS_CONFIG_PATH = CONFIG_DIR / "providers.json"
+MODELS_CONFIG_PATH = CONFIG_DIR / "models.json"
 
 TRANSCRIPT_DIR = WORKDIR / ".transcripts"
 TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool-results"
@@ -32,10 +31,11 @@ DURABLE_CRON_PATH = WORKDIR / ".scheduled_tasks.json"
 for path in (TASKS_DIR, WORKTREES_DIR, MAILBOX_DIR):
     path.mkdir(exist_ok=True)
 
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
-PRIMARY_MODEL = MODEL
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_ID")
+
+from harness.models import initialize_model  # noqa: E402
+
+initialize_model()
 
 DEFAULT_MAX_TOKENS = 8000
 ESCALATED_MAX_TOKENS = 16000

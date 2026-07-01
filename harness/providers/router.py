@@ -1,0 +1,48 @@
+"""Route LLM calls to the correct provider backend."""
+
+from __future__ import annotations
+
+from harness.models import ModelProfile
+from harness.providers.anthropic import get_anthropic_client
+from harness.providers.config import get_provider
+from harness.providers.openai_compat import create_openai_message
+
+
+def create_provider_message(
+    *,
+    profile: ModelProfile,
+    messages: list,
+    max_tokens: int,
+    system: str | None = None,
+    tools: list | None = None,
+):
+    provider = get_provider(profile.provider)
+
+    if provider.type == "anthropic":
+        client = get_anthropic_client(provider)
+        kwargs: dict = {
+            "model": profile.api_model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if system is not None:
+            kwargs["system"] = system
+        if tools is not None:
+            kwargs["tools"] = tools
+        if profile.thinking:
+            kwargs["thinking"] = {"type": "enabled"}
+        return client.messages.create(**kwargs)
+
+    if provider.type == "openai":
+        if profile.thinking:
+            print("  \033[33m[llm] thinking mode ignored for OpenAI-compatible provider\033[0m")
+        return create_openai_message(
+            provider=provider,
+            model=profile.api_model,
+            messages=messages,
+            max_tokens=max_tokens,
+            system=system,
+            tools=tools,
+        )
+
+    raise RuntimeError(f"Unsupported provider type '{provider.type}' for '{provider.id}'")
