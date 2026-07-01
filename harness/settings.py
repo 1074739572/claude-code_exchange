@@ -25,10 +25,11 @@ TASKS_DIR = WORKDIR / ".tasks"
 WORKTREES_DIR = WORKDIR / ".worktrees"
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 MEMORY_DIR = WORKDIR / ".memory"
+PROJECT_DIR = WORKDIR / ".project"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
 DURABLE_CRON_PATH = WORKDIR / ".scheduled_tasks.json"
 
-for path in (TASKS_DIR, WORKTREES_DIR, MAILBOX_DIR):
+for path in (TASKS_DIR, WORKTREES_DIR, MAILBOX_DIR, PROJECT_DIR):
     path.mkdir(exist_ok=True)
 
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_ID")

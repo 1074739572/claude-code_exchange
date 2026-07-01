@@ -92,8 +92,22 @@ def stop_hook(messages: list):
     return None
 
 
+def project_write_hook(block, output):
+    if block.name in ("write_file", "edit_file"):
+        path = block.input.get("path", "")
+        if path:
+            try:
+                from harness.project.resume import on_write_file
+
+                on_write_file(path)
+            except Exception:
+                pass
+    return None
+
+
 register_hook("UserPromptSubmit", user_prompt_hook)
 register_hook("PreToolUse", permission_hook)
 register_hook("PreToolUse", log_hook)
 register_hook("PostToolUse", large_output_hook)
+register_hook("PostToolUse", project_write_hook)
 register_hook("Stop", stop_hook)

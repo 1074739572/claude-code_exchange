@@ -16,7 +16,11 @@ venv/
 .memory/
 .scheduled_tasks.json
 .rag/
+.project/
 
 # Local reference corpus (large docx etc.)
-/files
+files/
 
+cloud_project/
+output/
+*.txt

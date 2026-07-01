@@ -136,11 +136,13 @@ def micro_compact(messages: list) -> list:
 
 
 def write_transcript(messages: list) -> Path:
+    from harness.project.session import serialize_messages
+
     TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
     path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with path.open("w", encoding="utf-8") as handle:
-        for message in messages:
-            handle.write(json.dumps(message, default=str) + "\n")
+        for message in serialize_messages(messages):
+            handle.write(json.dumps(message, ensure_ascii=False) + "\n")
     return path
 
 
@@ -161,13 +163,19 @@ def summarize_history(messages: list) -> str:
 
 
 def compact_history(messages: list) -> list:
+    from harness.project.session_store import record_compact_boundary
+
     transcript = write_transcript(messages)
     print(f"  \033[36m[compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
-    return [{"role": "user", "content": f"[Compacted]\n\n{summary}"}]
+    compacted = [{"role": "user", "content": f"[Compacted]\n\n{summary}"}]
+    record_compact_boundary("auto", estimate_size(messages), transcript, compacted)
+    return compacted
 
 
 def reactive_compact(messages: list) -> list:
+    from harness.project.session_store import record_compact_boundary
+
     transcript = write_transcript(messages)
     print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
     try:
@@ -182,10 +190,12 @@ def reactive_compact(messages: list) -> list:
         and message_has_tool_use(messages[tail_start - 1])
     ):
         tail_start -= 1
-    return [
+    compacted = [
         {"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
         *messages[tail_start:],
     ]
+    record_compact_boundary("reactive", estimate_size(messages), transcript, compacted)
+    return compacted
 
 
 def prepare_context(messages: list) -> list:

@@ -20,9 +20,10 @@ PROMPT_SECTIONS = {
         "spawn_teammate, send_message, check_inbox, "
         "request_shutdown, request_plan, review_plan, "
         "create_worktree, remove_worktree, keep_worktree, "
-        "connect_mcp, rag_index, rag_search, rag_status. "
+        "connect_mcp, rag_index, rag_search, rag_status, "
+        "project_status, project_init, project_set_chapter, project_note. "
         "MCP tools are prefixed mcp__{server}__{tool}. "
-        "For long report/thesis 仿写/改写: load_skill(thesis-writing) first, then rag_index / rag_search per section."
+        "Thesis rewrite: load_skill(thesis-writing); progress auto-saves to .project/ and resumes on restart."
     ),
     "workspace": f"Working directory: {WORKDIR}",
 }

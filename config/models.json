@@ -26,10 +26,10 @@
       "api_model": "glm-4-plus"
     },
     {
-      "id": "qwen3.7-plus",
+      "id": "qwen3.7-max",
       "provider": "qwen",
       "label": "通义千问 Plus",
-      "api_model": "qwen3.7-plus"
+      "api_model": "qwen3.7-max"
     },
     {
       "id": "qwen-max",

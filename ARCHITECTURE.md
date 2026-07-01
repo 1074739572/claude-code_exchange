@@ -37,7 +37,8 @@
 | `.mailboxes/` | 团队消息 JSONL |
 | `.worktrees/` | git worktree |
 | `.memory/MEMORY.md` | 长期记忆 |
-| `.transcripts/` | 压缩前对话备份 |
+| `.project/` | 章节进度 + **session.jsonl**（Claude Code 式会话）+ history.json 快照 |
+| `.transcripts/` | compact 前完整备份（compact_boundary 中引用） |
 | `.scheduled_tasks.json` | 持久 cron |
 
 ## 已完成的改进（相对 s20）

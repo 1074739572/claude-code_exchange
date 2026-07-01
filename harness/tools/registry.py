@@ -5,6 +5,13 @@ from __future__ import annotations
 from harness.agent.cron import run_cancel_cron, run_list_crons, run_schedule_cron
 from harness.agent.subagent import spawn_subagent
 from harness.mcp.pool import assemble_tool_pool, connect_mcp
+from harness.project.tools import (
+    run_project_init,
+    run_project_note,
+    run_project_reset,
+    run_project_set_chapter,
+    run_project_status,
+)
 from harness.rag.tools import run_rag_index, run_rag_search, run_rag_status
 from harness.skills_loader import load_skill
 from harness.tasks import (
@@ -415,6 +422,52 @@ BUILTIN_TOOLS = [
         "description": "Show local RAG index status: sources, chunk counts, embedding model.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "project_status",
+        "description": "Show thesis/report rewrite progress (chapters, output files, resume state).",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "project_init",
+        "description": "Initialize or reset the thesis rewrite project chapter list and paths.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "source_doc": {"type": "string"},
+                "reset": {"type": "boolean"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "project_set_chapter",
+        "description": "Mark a chapter pending/in_progress/done and set as current.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["pending", "in_progress", "done"]},
+                "path": {"type": "string"},
+                "notes": {"type": "string"},
+            },
+            "required": ["chapter_id"],
+        },
+    },
+    {
+        "name": "project_note",
+        "description": "Save free-form notes on the rewrite project (persisted across sessions).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"notes": {"type": "string"}},
+            "required": ["notes"],
+        },
+    },
+    {
+        "name": "project_reset",
+        "description": "Clear saved conversation history only (keeps chapter progress).",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 BUILTIN_HANDLERS = {
@@ -447,6 +500,11 @@ BUILTIN_HANDLERS = {
     "rag_index": run_rag_index,
     "rag_search": run_rag_search,
     "rag_status": run_rag_status,
+    "project_status": run_project_status,
+    "project_init": run_project_init,
+    "project_set_chapter": run_project_set_chapter,
+    "project_note": run_project_note,
+    "project_reset": run_project_reset,
 }
 
 
