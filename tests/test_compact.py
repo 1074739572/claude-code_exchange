@@ -10,9 +10,19 @@ from harness.agent.recovery import is_prompt_too_long_error
 
 class TestSafeInputBudget(unittest.TestCase):
     def test_budget_under_deepseek_limit(self) -> None:
-        budget = _safe_input_budget()
-        self.assertLessEqual(budget, 12000)
-        self.assertGreater(budget, 0)
+        budget = _safe_input_budget("deepseek-v4-flash")
+        # 1M context -> ~250K chars, well above the old 12K floor
+        self.assertGreater(budget, 100_000)
+
+    def test_qwen_max_small_context(self) -> None:
+        budget = _safe_input_budget("qwen-max")
+        # 32K context, 12K reserve -> 20K tokens -> 80K chars
+        self.assertGreater(budget, 50_000)
+        self.assertLess(budget, 100_000)
+
+    def test_unknown_model_falls_back(self) -> None:
+        budget = _safe_input_budget("unknown-model-xyz")
+        self.assertGreaterEqual(budget, 12_000)
 
 
 class TestSummarizeHistoryFallback(unittest.TestCase):
