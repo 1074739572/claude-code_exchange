@@ -144,8 +144,22 @@ def write_transcript(messages: list) -> Path:
     return path
 
 
+def _safe_input_budget(model_id: str | None = None) -> int:
+    """Conservative char budget for the summarization prompt.
+
+    DeepSeek/Qwen-class models cap input near 30K tokens. We assume ~4 chars
+    per token and reserve headroom for the system prompt, tool descriptions,
+    and the 2000-token summary output, so we cap the conversation payload at
+    ~12000 chars (~3000 tokens). This is intentionally far below the 30720
+    token limit to avoid the 400 'Range of input length should be [1, 30720]'
+    error seen on DeepSeek.
+    """
+    return 12000
+
+
 def summarize_history(messages: list) -> str:
-    conversation = json.dumps(messages, default=str)[:80000]
+    budget = _safe_input_budget()
+    conversation = json.dumps(messages, default=str)[:budget]
     prompt = (
         f"Working directory: {WORKDIR}\n"
         "Python package lives at `harness/` in this repo (NOT `src/harness/`).\n"
@@ -153,14 +167,34 @@ def summarize_history(messages: list) -> str:
         "Preserve current goal, key findings, changed files, remaining work, "
         "and user constraints. If the user complained about drift or wrong paths, "
         "state that explicitly in remaining work.\n\n"
+        f"[Conversation trimmed to last {budget} chars for summarization]\n\n"
         + conversation
     )
-    response = create_message(
-        model_id=get_model(),
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2000,
-    )
-    return extract_text(response.content) or "(empty summary)"
+    try:
+        response = create_message(
+            model_id=get_model(),
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+        )
+        return extract_text(response.content) or "(empty summary)"
+    except Exception as exc:
+        return (
+            f"[Compact summary unavailable: {exc}]\n"
+            "Earlier conversation was trimmed to fit the model input limit. "
+            "Re-issue your last instruction if the agent seems to have lost context."
+        )
+
+
+def _keep_tail(messages: list, count: int = 5) -> list:
+    tail_start = max(0, len(messages) - count)
+    if (
+        tail_start > 0
+        and tail_start < len(messages)
+        and is_tool_result_message(messages[tail_start])
+        and message_has_tool_use(messages[tail_start - 1])
+    ):
+        tail_start -= 1
+    return messages[tail_start:]
 
 
 def compact_history(messages: list) -> list:
@@ -179,21 +213,11 @@ def reactive_compact(messages: list) -> list:
 
     transcript = write_transcript(messages)
     print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
-    try:
-        summary = summarize_history(messages)
-    except Exception:
-        summary = "Earlier conversation was trimmed after a prompt-too-long error."
-    tail_start = max(0, len(messages) - 5)
-    if (
-        tail_start > 0
-        and tail_start < len(messages)
-        and is_tool_result_message(messages[tail_start])
-        and message_has_tool_use(messages[tail_start - 1])
-    ):
-        tail_start -= 1
+    summary = summarize_history(messages)
+    tail = _keep_tail(messages, count=5)
     compacted = [
         {"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
-        *messages[tail_start:],
+        *tail,
     ]
     record_compact_boundary("reactive", estimate_size(messages), transcript, compacted)
     return compacted

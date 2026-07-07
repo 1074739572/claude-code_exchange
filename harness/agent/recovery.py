@@ -67,4 +67,8 @@ def is_prompt_too_long_error(exc: Exception) -> bool:
         ("prompt" in msg and "long" in msg)
         or "context_length_exceeded" in msg
         or "max_context_window" in msg
+        or "range of input length" in msg
+        or "input length should be" in msg
+        or "maximum context length" in msg
+        or "input_too_long" in msg
     )
