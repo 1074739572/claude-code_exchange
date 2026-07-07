@@ -6,23 +6,39 @@ import threading
 import time
 
 import harness.console as console
+from harness import terminal_state
 from harness.agent.cron import consume_cron_queue
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.loop import agent_loop, agent_lock
 from harness.mcp.pool import bootstrap_mcp_servers
-from harness.models import format_model_status, handle_model_command
+from harness.models import handle_model_command
 from harness.project.resume import checkpoint_history, resume_banner, resume_context_message
 from harness.project.session_store import bootstrap_session
+from harness.todos.state import load_todos_from_disk
 from harness.project.tools import (
     run_project_clear,
     run_project_import_transcript,
     run_project_list_transcripts,
     run_project_status,
 )
-from harness.providers.config import load_providers, provider_key_status
 from harness.settings import CLI_PROMPT
 from harness.teams import consume_lead_inbox
+from harness.ui.banner import BANNER_STYLES, get_banner_style, print_hero, run_banner_demo
+from harness.ui.renderer import renderer
+from harness.ui.welcome import render_welcome
+
+
+def _help_text() -> str:
+    return """Commands:
+  /model [id]              switch or list models
+  /resume, /project        chapter progress
+  /clear                   reset session + project state
+  /import-transcript [path] [full|merge]
+  /transcripts             list .transcripts backups
+  /banner [style|demo]     preview welcome art (classic|emoji|typewriter|shadow3d)
+  /help                    this message
+  q, exit                  quit"""
 
 
 def _assistant_text_blocks(content) -> list[str]:
@@ -61,7 +77,7 @@ def cron_autorun_loop(history: list, context: dict) -> None:
                 history.append(
                     {"role": "user", "content": f"[Scheduled] {job.prompt}"}
                 )
-                console.terminal_print(f"  \033[35m[cron auto] {job.prompt[:60]}\033[0m")
+                renderer.hook("cron auto", job.prompt[:60])
             agent_loop(history, context)
             context.update(update_context(context, history))
             print_turn_assistants(history, turn_start)
@@ -69,26 +85,16 @@ def cron_autorun_loop(history: list, context: dict) -> None:
 
 
 def run_cli() -> None:
-    console.CLI_ACTIVE = True
-    print("improved_harness: comprehensive agent")
-    print(format_model_status())
-    ready = [
-        load_providers()[pid].label
-        for pid, ok in provider_key_status().items()
-        if ok
-    ]
-    if ready:
-        print(f"Providers ready: {', '.join(ready)}")
+    terminal_state.CLI_ACTIVE = True
 
     history, session_source = bootstrap_session()
+    load_todos_from_disk()
     context = update_context({}, history if history else [])
+
+    render_welcome(session_source=session_source)
 
     banner = resume_banner()
     if banner:
-        print()
-        print(banner)
-        if session_source:
-            print(f"Continued: {session_source}")
         should_inject = not history or (
             len(history) <= 2
             and not any(
@@ -114,16 +120,11 @@ def run_cli() -> None:
                     }
                 )
                 checkpoint_history(history)
-    else:
-        print("Tip: sessions persist in .project/session.jsonl (auto-continue on restart)")
-
-    print("Enter a question, press Enter to send. Type q to quit.")
-    print("Commands: /model  /resume  /clear  /import-transcript  /transcripts\n")
 
     bootstrap_results = bootstrap_mcp_servers()
     for line in bootstrap_results:
         if "Connected" in line:
-            print(f"  {line}")
+            renderer.info(line.strip())
 
     threading.Thread(
         target=cron_autorun_loop, args=(history, context), daemon=True
@@ -137,21 +138,45 @@ def run_cli() -> None:
         if query.strip().lower() in ("q", "exit", ""):
             break
         if query.strip().lower().startswith("/model"):
-            print(handle_model_command(query))
+            renderer.plain(handle_model_command(query))
             print()
             continue
         if query.strip().lower() in ("/resume", "/project"):
-            print(run_project_status())
+            renderer.plain(run_project_status())
             print()
             continue
         if query.strip().lower() in ("/clear",):
-            print(run_project_clear())
+            renderer.plain(run_project_clear())
             history.clear()
             context = update_context({}, [])
             print()
             continue
         if query.strip().lower() in ("/transcripts", "/list-transcripts"):
-            print(run_project_list_transcripts())
+            renderer.plain(run_project_list_transcripts())
+            print()
+            continue
+        if query.strip().lower() in ("/help",):
+            renderer.plain(_help_text())
+            print()
+            continue
+        if query.strip().lower().startswith("/banner"):
+            parts = query.strip().split()
+            if len(parts) == 1 or parts[1].lower() == "demo":
+                from rich.console import Console
+
+                run_banner_demo(Console(highlight=False, legacy_windows=False))
+            elif parts[1].lower() in BANNER_STYLES:
+                from rich.console import Console
+
+                c = Console(highlight=False, legacy_windows=False)
+                print_hero(c, style=parts[1].lower(), width=c.size.width)  # type: ignore[arg-type]
+            else:
+                renderer.plain(
+                    "Banner styles: " + ", ".join(BANNER_STYLES) + "\n"
+                    "Usage: /banner demo  |  /banner emoji\n"
+                    "Default: HARNESS_BANNER env (current: "
+                    f"{get_banner_style()})"
+                )
             print()
             continue
         if query.strip().lower().startswith("/import-transcript"):
@@ -169,12 +194,13 @@ def run_cli() -> None:
             if len(parts) > 2 and parts[2].lower() == "full":
                 mode = "full"
             merge = "merge" in query.lower()
-            print(run_project_import_transcript(path=path, mode=mode, merge=merge))
+            renderer.plain(run_project_import_transcript(path=path, mode=mode, merge=merge))
             history[:] = bootstrap_session()[0]
             context = update_context(context, history)
             print()
             continue
         trigger_hooks("UserPromptSubmit", query)
+        renderer.user(query)
         turn_start = len(history)
         history.append({"role": "user", "content": query})
         with agent_lock:

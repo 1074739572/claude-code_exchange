@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from harness.models import get_model_profile
 from harness.providers.router import create_provider_message
+from harness.ui.renderer import renderer
 
 
 def _format_llm_tag(profile) -> str:
@@ -25,19 +26,18 @@ def create_message(
 ):
     profile = get_model_profile(model_id)
 
-    print(f"  \033[90m[llm] {_format_llm_tag(profile)}\033[0m")
-    response = create_provider_message(
-        profile=profile,
-        messages=messages,
-        max_tokens=max_tokens,
-        system=system,
-        tools=tools,
-    )
+    with renderer.llm_busy(_format_llm_tag(profile)):
+        response = create_provider_message(
+            profile=profile,
+            messages=messages,
+            max_tokens=max_tokens,
+            system=system,
+            tools=tools,
+        )
 
     reported = getattr(response, "model", None)
     if reported and reported != profile.api_model:
-        print(
-            f"  \033[33m[llm] API backend used '{reported}' "
-            f"(requested '{profile.api_model}')\033[0m"
+        renderer.warn(
+            f"API backend used '{reported}' (requested '{profile.api_model}')"
         )
     return response

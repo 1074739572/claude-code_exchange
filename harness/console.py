@@ -2,30 +2,14 @@
 
 from __future__ import annotations
 
-import threading
-
-from harness.settings import CLI_PROMPT
-
-try:
-    import readline
-
-    readline.parse_and_bind("set bind-tty-special-chars off")
-    READLINE_AVAILABLE = True
-except ImportError:
-    READLINE_AVAILABLE = False
-
-CLI_ACTIVE = False
+from harness import terminal_state
 
 
 def terminal_print(text: str) -> None:
-    if threading.current_thread() is threading.main_thread() or not CLI_ACTIVE:
-        print(text)
-        return
-    line = ""
-    if READLINE_AVAILABLE:
-        try:
-            line = readline.get_line_buffer()
-        except Exception:
-            line = ""
-    print(f"\r\033[K{text}")
-    print(CLI_PROMPT + line, end="", flush=True)
+    from harness.ui.renderer import renderer
+
+    renderer.assistant(text)
+
+
+CLI_ACTIVE = terminal_state.CLI_ACTIVE
+READLINE_AVAILABLE = terminal_state.READLINE_AVAILABLE

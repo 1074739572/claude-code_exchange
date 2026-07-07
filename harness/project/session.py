@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import types
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from harness.settings import PROJECT_DIR
 
@@ -13,7 +14,11 @@ HISTORY_PATH = PROJECT_DIR / "history.json"
 
 def _block_to_dict(block) -> dict:
     if isinstance(block, dict):
-        return block
+        return dict(block)
+    if is_dataclass(block):
+        return asdict(block)
+    if isinstance(block, SimpleNamespace):
+        return {key: value for key, value in vars(block).items() if value is not None}
     data = {"type": getattr(block, "type", None)}
     for key in ("text", "id", "name", "input", "tool_use_id", "content"):
         value = getattr(block, key, None)
@@ -42,10 +47,6 @@ def serialize_messages(messages: list) -> list[dict]:
     return serialized
 
 
-def _block_from_dict(data: dict):
-    return types.SimpleNamespace(**data)
-
-
 def deserialize_messages(data: list[dict]) -> list:
     messages = []
     for message in data:
@@ -59,7 +60,7 @@ def deserialize_messages(data: list[dict]) -> list:
                 {
                     "role": role,
                     "content": [
-                        _block_from_dict(item) if isinstance(item, dict) else item
+                        dict(item) if isinstance(item, dict) else _block_to_dict(item)
                         for item in content
                     ],
                 }

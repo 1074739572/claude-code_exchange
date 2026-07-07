@@ -20,7 +20,9 @@ from harness.agent.recovery import (
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
+from harness.messages.blocks import block_field, is_tool_use
 from harness.models import get_model
+from harness.project.session import serialize_messages
 from harness.prompts import assemble_system_prompt
 from harness.settings import (
     CONTINUATION_PROMPT,
@@ -30,9 +32,15 @@ from harness.settings import (
 )
 from harness.tools.dispatch import call_tool_handler, has_tool_use
 from harness.tools.registry import get_tool_pool
+from harness.todos.format import format_todo_reminder
+from harness.todos.state import note_llm_round_without_todo_update, rounds_since_todo_update
+from harness.ui.renderer import renderer
 
-rounds_since_todo = 0
 agent_lock = threading.Lock()
+
+
+def _append_assistant(messages: list, content) -> None:
+    messages.append(serialize_messages([{"role": "assistant", "content": content}])[0])
 
 
 def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, max_tokens: int):
@@ -51,7 +59,6 @@ def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, m
 
 
 def agent_loop(messages: list, context: dict) -> None:
-    global rounds_since_todo
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
 
@@ -59,15 +66,14 @@ def agent_loop(messages: list, context: dict) -> None:
         fired = consume_cron_queue()
         for job in fired:
             messages.append({"role": "user", "content": f"[Scheduled] {job.prompt}"})
-            print(f"  \033[35m[cron inject] {job.prompt[:60]}\033[0m")
+            renderer.hook("cron inject", job.prompt[:60])
 
         inject_background_notifications(messages)
 
-        if rounds_since_todo >= 3:
+        if rounds_since_todo_update >= 3:
             messages.append(
-                {"role": "user", "content": "<reminder>Update your todos.</reminder>"}
+                {"role": "user", "content": format_todo_reminder()}
             )
-            rounds_since_todo = 0
 
         prepare_context(messages)
         context = update_context(context, messages)
@@ -92,9 +98,9 @@ def agent_loop(messages: list, context: dict) -> None:
             if not state.has_escalated:
                 max_tokens = ESCALATED_MAX_TOKENS
                 state.has_escalated = True
-                print(f"  \033[33m[max_tokens] retry with {max_tokens}\033[0m")
+                renderer.warn(f"max_tokens: retry with {max_tokens}")
                 continue
-            messages.append({"role": "assistant", "content": response.content})
+            _append_assistant(messages, response.content)
             if state.recovery_count < MAX_RECOVERY_RETRIES:
                 messages.append({"role": "user", "content": CONTINUATION_PROMPT})
                 state.recovery_count += 1
@@ -103,19 +109,22 @@ def agent_loop(messages: list, context: dict) -> None:
 
         max_tokens = DEFAULT_MAX_TOKENS
         state.has_escalated = False
-        messages.append({"role": "assistant", "content": response.content})
+        _append_assistant(messages, response.content)
         if not has_tool_use(response.content):
             trigger_hooks("Stop", messages)
             return
 
         results = []
         compacted_now = False
+        had_todo_write = False
         for block in response.content:
-            if block.type != "tool_use":
+            if not is_tool_use(block):
                 continue
-            print(f"\033[36m> {block.name}\033[0m")
+            name = block_field(block, "name", "")
+            tool_input = block_field(block, "input", {}) or {}
+            renderer.tool_start(name, tool_input if isinstance(tool_input, dict) else None)
 
-            if block.name == "compact":
+            if name == "compact":
                 messages[:] = compact_history(messages)
                 messages.append(
                     {
@@ -137,7 +146,7 @@ def agent_loop(messages: list, context: dict) -> None:
                 )
                 continue
 
-            if should_run_background(block.name, block.input):
+            if should_run_background(name, tool_input):
                 bg_id = start_background_task(block, handlers)
                 output = (
                     f"[Background task {bg_id} started] "
@@ -152,25 +161,26 @@ def agent_loop(messages: list, context: dict) -> None:
                 )
                 continue
 
-            handler = handlers.get(block.name)
-            output = call_tool_handler(handler, block.input, block.name)
+            handler = handlers.get(name)
+            output = call_tool_handler(handler, tool_input, name)
             trigger_hooks("PostToolUse", block, output)
-            print(str(output)[:300])
+            renderer.tool_result(str(output))
 
-            if block.name == "todo_write":
-                rounds_since_todo = 0
-            else:
-                rounds_since_todo += 1
+            if name == "todo_write":
+                had_todo_write = True
 
             results.append(
                 {
                     "type": "tool_result",
-                    "tool_use_id": block.id,
+                    "tool_use_id": block_field(block, "id", ""),
                     "content": output,
                 }
             )
 
         if compacted_now:
             continue
+
+        if not had_todo_write:
+            note_llm_round_without_todo_update()
 
         messages.append({"role": "user", "content": build_user_content(results)})

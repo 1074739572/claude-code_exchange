@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 
 from harness.hooks import trigger_hooks
+from harness.messages.blocks import block_field
 from harness.tools.dispatch import call_tool_handler
 
 _bg_counter = 0
@@ -45,11 +46,13 @@ def start_background_task(block, handlers: dict) -> str:
     global _bg_counter
     _bg_counter += 1
     bg_id = f"bg_{_bg_counter:04d}"
-    command = block.input.get("command", block.name)
+    name = block_field(block, "name", "")
+    tool_input = block_field(block, "input", {}) or {}
+    command = tool_input.get("command", name)
 
     def worker():
-        handler = handlers.get(block.name)
-        result = call_tool_handler(handler, block.input, block.name)
+        handler = handlers.get(name)
+        result = call_tool_handler(handler, tool_input, name)
         trigger_hooks("PostToolUse", block, result)
         with background_lock:
             background_tasks[bg_id]["status"] = "completed"
@@ -57,7 +60,7 @@ def start_background_task(block, handlers: dict) -> str:
 
     with background_lock:
         background_tasks[bg_id] = {
-            "tool_use_id": block.id,
+            "tool_use_id": block_field(block, "id", ""),
             "command": command,
             "status": "running",
         }

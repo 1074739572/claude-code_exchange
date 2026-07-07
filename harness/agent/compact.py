@@ -15,15 +15,12 @@ from harness.settings import (
     TRANSCRIPT_DIR,
 )
 from harness.llm import create_message
+from harness.messages.blocks import block_type
 from harness.tools.dispatch import extract_text
 
 
 def estimate_size(messages: list) -> int:
     return len(json.dumps(messages, default=str))
-
-
-def block_type(block):
-    return block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
 
 
 def message_has_tool_use(message: dict) -> bool:

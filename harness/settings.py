@@ -50,7 +50,16 @@ PERSIST_THRESHOLD = 30000
 CONTINUATION_PROMPT = (
     "Continue from the previous response. Do not repeat completed work."
 )
-CLI_PROMPT = "\033[36mharness >> \033[0m"
+import sys
+
+# Built-in input() must use a prompt encodable on the active console (GBK on Windows).
+if sys.platform == "win32":
+    CLI_PROMPT = "\033[36m> \033[0m"
+else:
+    CLI_PROMPT = "\033[36m› \033[0m"
 
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
+
+# Welcome hero variants for /banner demo: classic | emoji | typewriter | shadow3d
+BANNER_STYLE = os.getenv("HARNESS_BANNER", "classic").strip().lower()

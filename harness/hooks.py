@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from harness.mcp.pool import mcp_tool_meta
+from harness.messages.blocks import block_field
 from harness.settings import WORKDIR
 from harness.tools.filesystem import safe_path
 
@@ -30,8 +31,10 @@ def trigger_hooks(event: str, *args):
 
 
 def permission_hook(block):
-    if block.name == "bash":
-        command = block.input.get("command", "")
+    name = block_field(block, "name", "")
+    tool_input = block_field(block, "input", {}) or {}
+    if name == "bash":
+        command = tool_input.get("command", "")
         for pattern in DENY_LIST:
             if pattern in command:
                 return f"Permission denied: '{pattern}' is on the deny list"
@@ -41,17 +44,17 @@ def permission_hook(block):
             choice = input("  Allow? [y/N] ").strip().lower()
             if choice not in ("y", "yes"):
                 return "Permission denied by user"
-    if block.name in ("write_file", "edit_file"):
-        path = block.input.get("path", "")
+    if name in ("write_file", "edit_file"):
+        path = tool_input.get("path", "")
         try:
             safe_path(path)
         except Exception:
             return f"Permission denied: path escapes workspace: {path}"
-    if block.name.startswith("mcp__"):
-        meta = mcp_tool_meta.get(block.name, {})
+    if name.startswith("mcp__"):
+        meta = mcp_tool_meta.get(name, {})
         if meta.get("destructive"):
             print(
-                f"\n\033[33m[permission] MCP destructive tool: {block.name}\033[0m"
+                f"\n\033[33m[permission] MCP destructive tool: {name}\033[0m"
             )
             choice = input("  Allow? [y/N] ").strip().lower()
             if choice not in ("y", "yes"):
@@ -60,14 +63,14 @@ def permission_hook(block):
 
 
 def log_hook(block):
-    print(f"\033[90m[HOOK] {block.name}\033[0m")
+    print(f"\033[90m[HOOK] {block_field(block, 'name', '')}\033[0m")
     return None
 
 
 def large_output_hook(block, output):
     if len(str(output)) > 100000:
         print(
-            f"\033[33m[HOOK] large output from {block.name}: "
+            f"\033[33m[HOOK] large output from {block_field(block, 'name', '')}: "
             f"{len(str(output))} chars\033[0m"
         )
     return None
@@ -93,8 +96,10 @@ def stop_hook(messages: list):
 
 
 def project_write_hook(block, output):
-    if block.name in ("write_file", "edit_file"):
-        path = block.input.get("path", "")
+    name = block_field(block, "name", "")
+    tool_input = block_field(block, "input", {}) or {}
+    if name in ("write_file", "edit_file"):
+        path = tool_input.get("path", "")
         if path:
             try:
                 from harness.project.resume import on_write_file

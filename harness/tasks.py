@@ -10,8 +10,6 @@ from pathlib import Path
 
 from harness.settings import TASKS_DIR
 
-CURRENT_TODOS: list[dict] = []
-
 
 @dataclass
 class Task:

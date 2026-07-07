@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from harness.messages.blocks import block_text, is_text, is_tool_use
+
 
 def call_tool_handler(handler, args: dict, name: str) -> str:
     if not handler:
@@ -16,11 +18,11 @@ def extract_text(content) -> str:
     if not isinstance(content, list):
         return str(content)
     return "\n".join(
-        getattr(block, "text", "")
-        for block in content
-        if getattr(block, "type", None) == "text"
+        block_text(block) for block in content if is_text(block)
     ).strip()
 
 
 def has_tool_use(content) -> bool:
-    return any(getattr(block, "type", None) == "tool_use" for block in content)
+    if not isinstance(content, list):
+        return False
+    return any(is_tool_use(block) for block in content)

@@ -9,6 +9,8 @@ from harness.providers.config import get_provider
 from harness.mcp.pool import mcp_clients
 from harness.settings import WORKDIR
 from harness.skills_loader import list_skills
+from harness.todos.format import format_todos_for_prompt
+from harness.todos.state import get_todos
 
 PROMPT_SECTIONS = {
     "identity": "You are a coding agent. Act, don't explain.",
@@ -65,4 +67,7 @@ def assemble_system_prompt(context: dict) -> str:
         sections.append(
             "Active teammates: " + ", ".join(context["active_teammates"])
         )
+    todos_block = format_todos_for_prompt(get_todos())
+    if todos_block:
+        sections.append(todos_block)
     return "\n\n".join(sections)

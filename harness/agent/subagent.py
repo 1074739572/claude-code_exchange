@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
+from harness.messages.blocks import block_field, is_tool_use
 from harness.models import get_model
+from harness.project.session import serialize_messages
 from harness.settings import WORKDIR
 from harness.tools.dispatch import call_tool_handler, extract_text, has_tool_use
 from harness.tools.filesystem import run_bash, run_edit, run_glob, run_read, run_write
@@ -93,24 +95,28 @@ def spawn_subagent(description: str) -> str:
             tools=SUB_TOOLS,
             max_tokens=8000,
         )
-        messages.append({"role": "assistant", "content": response.content})
+        messages.append(
+            serialize_messages([{"role": "assistant", "content": response.content}])[0]
+        )
         if not has_tool_use(response.content):
             break
         results = []
         for block in response.content:
-            if block.type != "tool_use":
+            if not is_tool_use(block):
                 continue
             blocked = trigger_hooks("PreToolUse", block)
             if blocked:
                 output = str(blocked)
             else:
-                handler = SUB_HANDLERS.get(block.name)
-                output = call_tool_handler(handler, block.input, block.name)
+                name = block_field(block, "name", "")
+                tool_input = block_field(block, "input", {}) or {}
+                handler = SUB_HANDLERS.get(name)
+                output = call_tool_handler(handler, tool_input, name)
                 trigger_hooks("PostToolUse", block, output)
             results.append(
                 {
                     "type": "tool_result",
-                    "tool_use_id": block.id,
+                    "tool_use_id": block_field(block, "id", ""),
                     "content": str(output),
                 }
             )

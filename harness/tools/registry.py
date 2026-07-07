@@ -31,6 +31,7 @@ from harness.teams import (
 )
 from harness.tools.filesystem import run_bash, run_edit, run_glob, run_read, run_write
 from harness.tools.todo import run_todo_write
+from harness.todos.schema import TODO_WRITE_TOOL
 from harness.worktree import create_worktree, keep_worktree, remove_worktree
 
 
@@ -151,30 +152,7 @@ BUILTIN_TOOLS = [
             "required": ["pattern"],
         },
     },
-    {
-        "name": "todo_write",
-        "description": "Create and manage a task list for the current session.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "todos": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "content": {"type": "string"},
-                            "status": {
-                                "type": "string",
-                                "enum": ["pending", "in_progress", "completed"],
-                            },
-                        },
-                        "required": ["content", "status"],
-                    },
-                }
-            },
-            "required": ["todos"],
-        },
-    },
+    TODO_WRITE_TOOL,
     {
         "name": "task",
         "description": "Launch a focused subagent. Returns only its final summary.",

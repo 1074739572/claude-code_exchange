@@ -16,6 +16,33 @@ Retrieve via **local RAG** — never paste entire reference files into context.
 
 ---
 
+## 0. Resume（跨会话续写，自动）
+
+Harness **自动保存**到 `.project/`：
+
+| 文件 | 内容 |
+|------|------|
+| `.project/state.json` | 章节进度、当前章、输出路径、备注 |
+| `.project/history.json` | 完整对话历史 |
+
+**重启 `python main.py` 后**：
+- 自动加载历史对话 + 进度横幅
+- 输入 `/resume` 查看章节清单
+- 直接说「继续写第 X 章」即可，**不必从零规划**
+
+Agent 工具：
+
+```
+project_status              # 查看进度
+project_set_chapter         # 标记章节 in_progress / done
+project_note notes="..."    # 保存备注
+project_init reset=true     # 仅当要完全重来时
+```
+
+写完一章后 `write_file` 到 `output/XX_*.md` 会**自动**把该章标为 done。
+
+---
+
 ## 1. One-time setup (per corpus change)
 
 Before writing, ensure the index exists:

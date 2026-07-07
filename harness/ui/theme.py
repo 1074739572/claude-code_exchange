@@ -1,0 +1,12 @@
+"""CLI color and symbol conventions."""
+
+PROMPT = "› "
+ACCENT = "cyan"
+MUTED = "dim"
+TOOL = "bold cyan"
+ASSISTANT = "white"
+USER = "bold green"
+ERROR = "bold red"
+WARN = "yellow"
+INFO = "blue"
+HOOK = "dim"

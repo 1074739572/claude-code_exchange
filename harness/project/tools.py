@@ -94,7 +94,9 @@ def run_project_note(notes: str) -> str:
 
 def run_project_clear() -> str:
     from harness.project.session_store import clear_session
+    from harness.todos.state import clear_todos
 
+    clear_todos()
     archived = clear_session(archive=True)
     if archived:
         return f"Cleared active session. Archived to {archived}\nProject chapter state kept."
