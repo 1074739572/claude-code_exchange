@@ -1,0 +1,23 @@
+{
+  "lead_model_hint": "deepseek-v4-flash",
+  "agents": {
+    "code": {
+      "model_id": "glm-5.2-flash",
+      "label": "Code worker (GLM)",
+      "tools": ["bash", "read_file", "write_file", "edit_file", "glob"],
+      "system": "You implement code, fix bugs, and run commands. Complete the assignment, then return a concise summary: files changed, commands run, result status. Do not spawn subagents."
+    },
+    "write": {
+      "model_id": "qwen-max",
+      "label": "Writing worker (Qwen)",
+      "tools": ["read_file", "write_file", "glob"],
+      "system": "You write and revise Chinese prose, reports, and documentation under output/. Complete the assignment, then return a concise summary. Do not spawn subagents."
+    },
+    "explore": {
+      "model_id": "deepseek-v4-flash",
+      "label": "Explore worker (DeepSeek)",
+      "tools": ["bash", "read_file", "glob"],
+      "system": "Read-only exploration: search the codebase and report findings. NEVER modify files. Return a concise summary."
+    }
+  }
+}

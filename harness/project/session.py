@@ -3,33 +3,24 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
+from harness.messages.sanitize import block_to_dict, sanitize_messages_for_api
+from harness.prompts.ephemeral import is_ephemeral_session_message
 from harness.settings import PROJECT_DIR
 
 HISTORY_PATH = PROJECT_DIR / "history.json"
 
 
 def _block_to_dict(block) -> dict:
-    if isinstance(block, dict):
-        return dict(block)
-    if is_dataclass(block):
-        return asdict(block)
-    if isinstance(block, SimpleNamespace):
-        return {key: value for key, value in vars(block).items() if value is not None}
-    data = {"type": getattr(block, "type", None)}
-    for key in ("text", "id", "name", "input", "tool_use_id", "content"):
-        value = getattr(block, key, None)
-        if value is not None:
-            data[key] = value
-    return data
+    return block_to_dict(block)
 
 
 def serialize_messages(messages: list) -> list[dict]:
     serialized = []
     for message in messages:
+        if is_ephemeral_session_message(message):
+            continue
         role = message.get("role")
         content = message.get("content")
         if isinstance(content, str):
@@ -45,6 +36,11 @@ def serialize_messages(messages: list) -> list[dict]:
             continue
         serialized.append({"role": role, "content": str(content)})
     return serialized
+
+
+def messages_for_api(messages: list) -> list[dict]:
+    """Serialize and sanitize for LLM provider requests."""
+    return sanitize_messages_for_api(serialize_messages(messages))
 
 
 def deserialize_messages(data: list[dict]) -> list:

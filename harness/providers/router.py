@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from harness.models import ModelProfile
-from harness.project.session import serialize_messages
+from harness.project.session import messages_for_api
 from harness.providers.anthropic import get_anthropic_client
 from harness.providers.config import get_provider
 from harness.providers.openai_compat import create_openai_message
@@ -18,8 +18,8 @@ def create_provider_message(
     tools: list | None = None,
 ):
     provider = get_provider(profile.provider)
-    # Session restore uses SimpleNamespace blocks; API clients need plain dicts.
-    api_messages = serialize_messages(messages)
+    # Session blocks may include provider-specific shapes; sanitize before API.
+    api_messages = messages_for_api(messages)
 
     if provider.type == "anthropic":
         client = get_anthropic_client(provider)

@@ -135,27 +135,28 @@ def sync_chapters_from_disk(state: ProjectState) -> ProjectState:
     return state
 
 
-def format_status(state: ProjectState) -> str:
+def format_status(state: ProjectState, *, include_resume_hints: bool = True) -> str:
     lines = [
-        f"Project: {state.title} ({state.project_id})",
-        f"Source: {state.source_doc}",
-        f"Output: {state.output_dir}/",
-        f"Updated: {state.updated_at or '(never)'}",
+        f"项目：{state.title}（{state.project_id}）",
+        f"源文档：{state.source_doc}",
+        f"输出目录：{state.output_dir}/",
+        f"更新时间：{state.updated_at or '（从未）'}",
         "",
-        "Chapters:",
+        "章节：",
     ]
     for ch in state.chapters:
         marker = {"done": "[x]", "in_progress": "[>]", "pending": "[ ]"}.get(ch.status, "[ ]")
-        current = " ← current" if ch.id == state.current_chapter else ""
+        current = " ← 当前" if ch.id == state.current_chapter else ""
         path = f" → {ch.path}" if ch.path else ""
         lines.append(f"  {marker} {ch.id} {ch.title}{path}{current}")
     if state.notes:
-        lines.extend(["", "Notes:", state.notes])
-    lines.extend(
-        [
-            "",
-            "Resume: restart harness — history and progress reload automatically.",
-            "Say: load_skill(thesis-writing) then continue the current chapter.",
-        ]
-    )
+        lines.extend(["", "备注：", state.notes])
+    if include_resume_hints:
+        lines.extend(
+            [
+                "",
+                "继续本项目：/resume project",
+                "重启会自动加载对话；论文上下文需手动 /resume project（默认不自动注入）。",
+            ]
+        )
     return "\n".join(lines)

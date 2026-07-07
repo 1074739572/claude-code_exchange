@@ -224,13 +224,15 @@ def format_model_list() -> str:
             lines.append(f"{marker} {entry['id']:<28} {suffix}")
 
     lines.append("")
-    lines.append("Switch with: /model <id>")
+    lines.append("Switch with: /model  (interactive)  or  /model <id>")
     lines.append(f"API keys: edit {PACKAGE_ROOT / '.env'}")
     return "\n".join(lines)
 
 
 def handle_model_command(query: str) -> str:
     parts = query.strip().split(maxsplit=1)
-    if len(parts) == 1 or parts[1].lower() == "list":
-        return format_model_list()
+    if len(parts) == 1 or parts[1].lower() in ("list", "pick", "picker"):
+        from harness.ui.model_picker import run_model_picker
+
+        return run_model_picker()
     return set_model(parts[1])

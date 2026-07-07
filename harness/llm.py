@@ -5,6 +5,7 @@ from __future__ import annotations
 from harness.models import get_model_profile
 from harness.providers.router import create_provider_message
 from harness.ui.renderer import renderer
+from harness.usage import parse_cache_usage
 
 
 def _format_llm_tag(profile) -> str:
@@ -14,6 +15,17 @@ def _format_llm_tag(profile) -> str:
     if profile.api_model != profile.id:
         tag = f"{profile.id}→{tag}"
     return tag
+
+
+def _log_cache_usage(response) -> None:
+    parsed = parse_cache_usage(getattr(response, "usage", None))
+    if parsed is None:
+        return
+    rate = f"{100 * parsed.hit_rate:.0f}%"
+    out_part = f" out={parsed.output_tokens}" if parsed.output_tokens is not None else ""
+    renderer.muted(
+        f"  [cache] hit={parsed.hit_tokens} miss={parsed.miss_tokens} ({rate}){out_part}"
+    )
 
 
 def create_message(
@@ -34,6 +46,8 @@ def create_message(
             system=system,
             tools=tools,
         )
+
+    _log_cache_usage(response)
 
     reported = getattr(response, "model", None)
     if reported and reported != profile.api_model:

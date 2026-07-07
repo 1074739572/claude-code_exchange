@@ -184,7 +184,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             },
             {
                 "name": "list_tasks",
-                "description": "List all tasks.",
+                "description": "List active tasks (completed are archived).",
                 "input_schema": {"type": "object", "properties": {}, "required": []},
             },
             {

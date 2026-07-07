@@ -197,6 +197,6 @@ def format_transcript_hint() -> str | None:
     if history and len(history) > 4:
         return None
     return (
-        f"Transcript backup available: {latest.name}\n"
-        f"Run: /import-transcript   (or /import-transcript full)"
+        f"可用对话备份：{latest.name}\n"
+        f"恢复命令：/import-transcript（或 /import-transcript full）"
     )

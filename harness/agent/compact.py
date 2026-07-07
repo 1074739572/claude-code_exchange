@@ -13,6 +13,7 @@ from harness.settings import (
     PERSIST_THRESHOLD,
     TOOL_RESULTS_DIR,
     TRANSCRIPT_DIR,
+    WORKDIR,
 )
 from harness.llm import create_message
 from harness.messages.blocks import block_type
@@ -146,9 +147,12 @@ def write_transcript(messages: list) -> Path:
 def summarize_history(messages: list) -> str:
     conversation = json.dumps(messages, default=str)[:80000]
     prompt = (
+        f"Working directory: {WORKDIR}\n"
+        "Python package lives at `harness/` in this repo (NOT `src/harness/`).\n"
         "Summarize this coding-agent conversation so work can continue. "
         "Preserve current goal, key findings, changed files, remaining work, "
-        "and user constraints.\n\n"
+        "and user constraints. If the user complained about drift or wrong paths, "
+        "state that explicitly in remaining work.\n\n"
         + conversation
     )
     response = create_message(

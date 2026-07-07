@@ -92,15 +92,36 @@ def run_project_note(notes: str) -> str:
     return f"Notes saved.\n\n{format_status(state)}"
 
 
-def run_project_clear() -> str:
+def run_project_clear(*, clear_project: bool = True) -> str:
+    """OpenCode-style /clear: by default wipes session + todos + project state.
+
+    Pass ``clear_project=False`` for the lighter "/clear session" variant that
+    keeps ``.project/state.json`` (thesis chapter table) on disk.
+    """
     from harness.project.session_store import clear_session
+    from harness.project.state import STATE_PATH
     from harness.todos.state import clear_todos
 
     clear_todos()
     archived = clear_session(archive=True)
+    parts = []
     if archived:
-        return f"Cleared active session. Archived to {archived}\nProject chapter state kept."
-    return "Cleared session. Project chapter state kept."
+        parts.append(f"已清空会话 → 已归档至 {archived}")
+    else:
+        parts.append("已清空会话（此前无 session.jsonl）。")
+
+    if clear_project:
+        if STATE_PATH.exists():
+            STATE_PATH.unlink()
+            parts.append("已删除 .project/state.json（论文章节表）。")
+        else:
+            parts.append("未找到 .project/state.json，无需删除。")
+        parts.append("已全新起步（OpenCode 模式）。要续论文：/resume project 重新 init。")
+    else:
+        parts.append(
+            "论文章节表已保留（.project/state.json）——这是 /clear session 轻量版。"
+        )
+    return "\n".join(parts)
 
 
 def run_project_reset() -> str:

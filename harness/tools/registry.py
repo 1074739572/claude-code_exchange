@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from harness.agent.cron import run_cancel_cron, run_list_crons, run_schedule_cron
-from harness.agent.subagent import spawn_subagent
+from harness.agent.subagent import run_agent_task
+from harness.agents.schema import build_task_tool_schema
 from harness.mcp.pool import assemble_tool_pool, connect_mcp
+from harness.modes import mode_enables_task, mode_disables_tool
 from harness.project.tools import (
     run_project_init,
     run_project_note,
@@ -16,10 +18,13 @@ from harness.rag.tools import run_rag_index, run_rag_search, run_rag_status
 from harness.skills_loader import load_skill
 from harness.tasks import (
     claim_task,
+    clear_active_tasks,
     complete_task,
     create_task,
     get_task_json,
+    list_archived_tasks,
     list_tasks,
+    reconcile_task_board,
 )
 from harness.teams import (
     BUS,
@@ -42,10 +47,12 @@ def run_create_task(subject: str, description: str = "", blockedBy: list[str] | 
     return f"Created {task.id}: {task.subject}{deps}"
 
 
-def run_list_tasks() -> str:
-    tasks = list_tasks()
+def run_list_tasks(include_archived: bool = False) -> str:
+    tasks = list_tasks(include_archived=include_archived)
     if not tasks:
-        return "No tasks."
+        if include_archived:
+            return "No tasks (active or archived)."
+        return "No active tasks. Completed work is archived under .tasks/archive/."
     return "\n".join(
         f"  {t.id}: {t.subject} [{t.status}]"
         + (f" (wt:{t.worktree})" if t.worktree else "")
@@ -65,6 +72,10 @@ def run_claim_task(task_id: str) -> str:
         return claim_task(task_id, owner="agent")
     except FileNotFoundError:
         return f"Error: task {task_id} not found"
+
+
+def run_clear_tasks(archive: bool = True) -> str:
+    return clear_active_tasks(archive=archive)
 
 
 def run_complete_task(task_id: str) -> str:
@@ -154,15 +165,6 @@ BUILTIN_TOOLS = [
     },
     TODO_WRITE_TOOL,
     {
-        "name": "task",
-        "description": "Launch a focused subagent. Returns only its final summary.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"description": {"type": "string"}},
-            "required": ["description"],
-        },
-    },
-    {
         "name": "load_skill",
         "description": "Load the full content of a skill by name.",
         "input_schema": {
@@ -193,7 +195,30 @@ BUILTIN_TOOLS = [
             "required": ["subject"],
         },
     },
-    {"name": "list_tasks", "description": "List all tasks.", "input_schema": {"type": "object", "properties": {}, "required": []}},
+    {
+        "name": "list_tasks",
+        "description": (
+            "List active tasks (pending/in_progress). Completed tasks are auto-archived "
+            "and hidden unless include_archived=true."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"include_archived": {"type": "boolean"}},
+            "required": [],
+        },
+    },
+    {
+        "name": "clear_tasks",
+        "description": (
+            "Clear the active task board when starting fresh work. "
+            "Archives remaining tasks by default."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"archive": {"type": "boolean"}},
+            "required": [],
+        },
+    },
     {
         "name": "get_task",
         "description": "Get full task details.",
@@ -455,10 +480,10 @@ BUILTIN_HANDLERS = {
     "edit_file": run_edit,
     "glob": run_glob,
     "todo_write": run_todo_write,
-    "task": spawn_subagent,
     "load_skill": load_skill,
     "create_task": run_create_task,
     "list_tasks": run_list_tasks,
+    "clear_tasks": run_clear_tasks,
     "get_task": run_get_task,
     "claim_task": run_claim_task,
     "complete_task": run_complete_task,
@@ -487,4 +512,21 @@ BUILTIN_HANDLERS = {
 
 
 def get_tool_pool() -> tuple[list[dict], dict]:
-    return assemble_tool_pool(BUILTIN_TOOLS, BUILTIN_HANDLERS)
+    tools = [
+        tool
+        for tool in BUILTIN_TOOLS
+        if not mode_disables_tool(tool.get("name", ""))
+    ]
+    handlers = {
+        name: handler
+        for name, handler in BUILTIN_HANDLERS.items()
+        if not mode_disables_tool(name)
+    }
+    if mode_enables_task():
+        insert_at = next(
+            (i for i, tool in enumerate(tools) if tool.get("name") == "todo_write"),
+            len(tools),
+        ) + 1
+        tools.insert(insert_at, build_task_tool_schema())
+        handlers["task"] = run_agent_task
+    return assemble_tool_pool(tools, handlers)

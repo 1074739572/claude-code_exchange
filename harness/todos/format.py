@@ -13,6 +13,22 @@ def _status_icon(status: str) -> str:
     return "[ ]"
 
 
+def format_todos_for_cli(todos: list[dict[str, str]] | None = None) -> str:
+    """Human-readable todo list for /resume and similar CLI output."""
+    todos = todos if todos is not None else get_todos()
+    if not todos:
+        return ""
+    status_zh = {"completed": "已完成", "in_progress": "进行中", "pending": "待办"}
+    lines = ["当前会话任务（todo_write 维护，每次提交完整列表）："]
+    for index, todo in enumerate(todos, 1):
+        status = todo["status"]
+        label = todo["activeForm"] if status == "in_progress" else todo["content"]
+        zh = status_zh.get(status, status)
+        lines.append(f"{index}. {_status_icon(status)} {label}（{zh}）")
+    lines.append("规则：同时只能有一项「进行中」；完成后立即标为已完成。")
+    return "\n".join(lines)
+
+
 def format_todos_for_prompt(todos: list[dict[str, str]] | None = None) -> str:
     todos = todos if todos is not None else get_todos()
     if not todos:
@@ -66,7 +82,7 @@ def format_todos_welcome_line(todos: list[dict[str, str]] | None = None) -> str 
         return None
     done = sum(1 for item in todos if item["status"] == "completed")
     active = next((item for item in todos if item["status"] == "in_progress"), None)
-    parts = [f"{done}/{len(todos)} done"]
+    parts = [f"{done}/{len(todos)} 已完成"]
     if active:
-        parts.append(f"now: {active['activeForm']}")
+        parts.append(f"当前：{active['activeForm']}")
     return "  ·  ".join(parts)

@@ -10,6 +10,7 @@ from harness.agent.background import (
     should_run_background,
     start_background_task,
 )
+from harness.agent.cancel import is_cancelled
 from harness.agent.compact import compact_history, prepare_context, reactive_compact
 from harness.agent.cron import consume_cron_queue
 from harness.agent.recovery import (
@@ -21,9 +22,10 @@ from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
 from harness.messages.blocks import block_field, is_tool_use
+from harness.messages.repair import finalize_cancelled_tool_round, repair_tool_pairing
 from harness.models import get_model
 from harness.project.session import serialize_messages
-from harness.prompts import assemble_system_prompt
+from harness.prompts import assemble_static_system_prompt, messages_with_ephemeral_context
 from harness.settings import (
     CONTINUATION_PROMPT,
     DEFAULT_MAX_TOKENS,
@@ -44,13 +46,14 @@ def _append_assistant(messages: list, content) -> None:
 
 
 def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, max_tokens: int):
-    system = assemble_system_prompt(context)
+    system = assemble_static_system_prompt()
+    api_messages = messages_with_ephemeral_context(messages, context)
     model_id = state.fallback_model or get_model()
     return with_retry(
         lambda: create_message(
             model_id=model_id,
             system=system,
-            messages=messages,
+            messages=api_messages,
             tools=tools,
             max_tokens=max_tokens,
         ),
@@ -58,11 +61,18 @@ def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, m
     )
 
 
-def agent_loop(messages: list, context: dict) -> None:
+def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) -> bool:
+    """Run until the agent finishes or cancel is requested. Returns True if interrupted."""
+    from harness.prompts.ephemeral import reset_ephemeral_cache
+
+    reset_ephemeral_cache()
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
 
     while True:
+        if is_cancelled():
+            return True
+
         fired = consume_cron_queue()
         for job in fired:
             messages.append({"role": "user", "content": f"[Scheduled] {job.prompt}"})
@@ -76,12 +86,15 @@ def agent_loop(messages: list, context: dict) -> None:
             )
 
         prepare_context(messages)
+        repair_tool_pairing(messages)
         context = update_context(context, messages)
         tools, handlers = get_tool_pool()
 
         try:
             response = call_llm(messages, context, tools, state, max_tokens)
         except Exception as exc:
+            if is_cancelled():
+                return True
             if is_prompt_too_long_error(exc) and not state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(messages)
                 state.has_attempted_reactive_compact = True
@@ -92,7 +105,10 @@ def agent_loop(messages: list, context: dict) -> None:
                     "content": [{"type": "text", "text": f"[Error] {type(exc).__name__}: {exc}"}],
                 }
             )
-            return
+            return False
+
+        if is_cancelled():
+            return True
 
         if response.stop_reason == "max_tokens":
             if not state.has_escalated:
@@ -105,19 +121,22 @@ def agent_loop(messages: list, context: dict) -> None:
                 messages.append({"role": "user", "content": CONTINUATION_PROMPT})
                 state.recovery_count += 1
                 continue
-            return
+            return False
 
         max_tokens = DEFAULT_MAX_TOKENS
         state.has_escalated = False
         _append_assistant(messages, response.content)
         if not has_tool_use(response.content):
             trigger_hooks("Stop", messages)
-            return
+            return False
 
         results = []
         compacted_now = False
         had_todo_write = False
         for block in response.content:
+            if is_cancelled():
+                finalize_cancelled_tool_round(messages, response.content, results)
+                return True
             if not is_tool_use(block):
                 continue
             name = block_field(block, "name", "")
@@ -140,7 +159,7 @@ def agent_loop(messages: list, context: dict) -> None:
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_use_id": block_field(block, "id", ""),
                         "content": str(blocked),
                     }
                 )
@@ -155,7 +174,7 @@ def agent_loop(messages: list, context: dict) -> None:
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_use_id": block_field(block, "id", ""),
                         "content": output,
                     }
                 )
@@ -168,6 +187,9 @@ def agent_loop(messages: list, context: dict) -> None:
 
             if name == "todo_write":
                 had_todo_write = True
+                from harness.prompts.ephemeral import reset_ephemeral_cache
+
+                reset_ephemeral_cache()
 
             results.append(
                 {
@@ -179,6 +201,10 @@ def agent_loop(messages: list, context: dict) -> None:
 
         if compacted_now:
             continue
+
+        if is_cancelled():
+            finalize_cancelled_tool_round(messages, response.content, results)
+            return True
 
         if not had_todo_write:
             note_llm_round_without_todo_update()

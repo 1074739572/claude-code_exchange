@@ -33,7 +33,8 @@
 
 | 路径 | 内容 |
 |------|------|
-| `.tasks/` | 任务 JSON |
+| `.tasks/` | 活动任务（pending / in_progress） |
+| `.tasks/archive/` | 已完成/已取消任务（不再进入 list_tasks 默认视图） |
 | `.mailboxes/` | 团队消息 JSONL |
 | `.worktrees/` | git worktree |
 | `.memory/MEMORY.md` | 长期记忆 |

@@ -1,8 +1,13 @@
-"""Claude Code-style session persistence: append-only session.jsonl + compact boundaries."""
+"""Claude Code-style session persistence: append-only session.jsonl + compact boundaries.
+
+OpenCode mode (default): every launch is a fresh chat unless explicitly opted in
+via ``HARNESS_CONTINUE_SESSION=1`` (Claude Code ``-c`` style).
+"""
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -16,6 +21,27 @@ from harness.settings import PROJECT_DIR, TRANSCRIPT_DIR
 
 SESSION_PATH = PROJECT_DIR / "session.jsonl"
 SESSION_META_PATH = PROJECT_DIR / "session.meta.json"
+
+
+def continue_session_on_startup() -> bool:
+    """Whether ``bootstrap_session`` should reload ``session.jsonl`` on restart.
+
+    OpenCode-style default: False (every launch is a fresh chat, like ``claude``
+    without ``-c``). Set ``HARNESS_CONTINUE_SESSION=1`` to get the Claude Code
+    ``-c`` behavior back.
+    """
+    flag = os.getenv("HARNESS_CONTINUE_SESSION", "0").strip().lower()
+    return flag in ("1", "true", "yes", "on")
+
+
+def bootstrap_from_transcript_enabled() -> bool:
+    """Whether an empty session may pull context from ``.transcripts/``.
+
+    Default off (OpenCode). ``HARNESS_BOOTSTRAP_TRANSCRIPT=1`` restores the old
+    fallback that rehydrated the latest transcript into a new session.
+    """
+    flag = os.getenv("HARNESS_BOOTSTRAP_TRANSCRIPT", "0").strip().lower()
+    return flag in ("1", "true", "yes", "on")
 
 
 def _load_meta() -> dict:
@@ -203,22 +229,32 @@ def _bootstrap_from_transcript() -> list | None:
 
 
 def bootstrap_session() -> tuple[list, str | None]:
-    """Continue most recent session (claude -c style). Returns (messages, source note)."""
+    """OpenCode-style bootstrap. Returns (messages, source note).
+
+    By default this returns an empty session on every launch (OpenCode mode).
+    Enable ``HARNESS_CONTINUE_SESSION=1`` to reload ``session.jsonl`` (Claude
+    Code ``-c`` style) and optionally ``HARNESS_BOOTSTRAP_TRANSCRIPT=1`` to fall
+    back to ``.transcripts/`` when no live session exists.
+    """
+    if not continue_session_on_startup():
+        return [], None
+
     loaded = load_session_messages()
     if loaded:
         save_history(loaded)
         stats = session_stats()
-        return loaded, f"session.jsonl ({stats['active_messages']} active messages)"
+        return loaded, f"session.jsonl（{stats['active_messages']} 条活跃消息）"
 
     migrated = _migrate_history_json()
     if migrated:
-        return migrated, "migrated history.json → session.jsonl"
+        return migrated, "已从 history.json 迁移至 session.jsonl"
 
-    from_transcript = _bootstrap_from_transcript()
-    if from_transcript:
-        meta = _load_meta()
-        source = meta.get("bootstrapped_from", "transcript")
-        return from_transcript, f"bootstrapped from .transcripts/{source}"
+    if bootstrap_from_transcript_enabled():
+        from_transcript = _bootstrap_from_transcript()
+        if from_transcript:
+            meta = _load_meta()
+            source = meta.get("bootstrapped_from", "transcript")
+            return from_transcript, f"从 .transcripts/{source} 引导恢复"
 
     return [], None
 
@@ -241,10 +277,20 @@ def clear_session(archive: bool = True) -> str | None:
 
 def format_session_line() -> str:
     stats = session_stats()
+    if not continue_session_on_startup():
+        if stats["exists"]:
+            return (
+                f"会话：OpenCode 模式（不自动续）。"
+                f"磁盘上有 {SESSION_PATH.name}（{stats['active_messages']} 条），"
+                f"如需续请设 HARNESS_CONTINUE_SESSION=1 重启，或 /resume project 注入论文。"
+            )
+        return "会话：（空）OpenCode 模式 —— 每次启动都是全新对话"
     if not stats["exists"]:
-        return "Session: (none — new conversation on first message)"
+        return "会话：（无）首条消息后将开始新对话"
+    compact_part = ""
+    if stats["compact_boundaries"]:
+        compact_part = f"，{stats['compact_boundaries']} 次压缩"
     return (
-        f"Session: {SESSION_PATH.name} "
-        f"({stats['active_messages']} messages"
-        f"{', ' + str(stats['compact_boundaries']) + ' compacts' if stats['compact_boundaries'] else ''})"
+        f"会话：{SESSION_PATH.name} "
+        f"（{stats['active_messages']} 条消息{compact_part}）"
     )

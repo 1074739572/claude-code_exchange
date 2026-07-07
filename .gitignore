@@ -24,3 +24,22 @@ files/
 cloud_project/
 output/
 *.txt
+*.docx
+delivery/
+
+# Local scratch scripts (thesis/document exploration, not part of harness)
+_extract_*.py
+_temp_*.py
+analyze_doc.py
+analyze_sample.py
+check_doc*.py
+check_docx.py
+check_sample.py
+extract_*.py
+find_chapters.py
+md2docx.py
+merge_docs.py
+verify_params.py
+test_ctf_unet.py
+test_done.flag
+test_output.log
