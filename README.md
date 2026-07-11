@@ -60,6 +60,7 @@ cd learn-claude-code
 | 模型 / 模式选择器 | 终端 ↑↓ 菜单 |
 | 中文 CLI 文案 | `/help`、`/resume`、`/clear` 等 |
 | 模式与子 Agent 配置 | `config/modes*.json`、`config/agents.json` |
+| 本地用量统计 | `.project/usage/` 按日流水；`/usage` 日/周/月/年 + 字符柱；提示符显示当前模型 |
 
 问题与取舍的详细说明在 [`docs/bugs/`](docs/bugs/README.md)，按编号记录「现象 → 根因 → 改了什么」。
 
@@ -127,7 +128,9 @@ python main.py
 
 在**你的工作区目录**（cwd）跑 Agent；skills 从本包 `skills/` 加载；会话与任务状态写在 cwd 下的 `.project/` 等目录。
 
-常用命令：`/help`、`/model`、`/clear`、`/resume`、`/resume project`。
+常用命令：`/help`、`/model`、`/usage`、`/clear`、`/resume`、`/resume project`。
+
+提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
 
 ---
 

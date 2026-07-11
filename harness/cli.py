@@ -42,6 +42,7 @@ from harness.ui.model_picker import run_model_picker
 from harness.ui.prompt_input import read_cli_query
 from harness.ui.renderer import renderer
 from harness.ui.welcome import render_welcome
+from harness.usage import handle_usage_command
 
 
 def _match_cli_command(query: str, command: str) -> bool:
@@ -55,6 +56,8 @@ def _help_text() -> str:
     return """Commands:
   /model                   pick model (↑↓ Enter) or /model <id>
   /mode [id]               pick mode (↑↓ Enter) — edit config/modes.json to add
+  /usage [today|week|month|year|YYYY-MM-DD|YYYY-MM|YYYY]
+                           local token stats + hit rate (bars; kept across /clear)
   /undo                    cancel last completed question + reply
   Esc / Ctrl+C             stop in-flight turn; roll back to edit/resend question
   /resume [session|project]  session status; project = opt-in thesis context
@@ -174,6 +177,10 @@ def run_cli() -> None:
                 renderer.plain(format_mode_catalog())
             else:
                 renderer.plain(set_mode(parts[1]))
+            print()
+            continue
+        if _match_cli_command(query, "/usage"):
+            renderer.plain(handle_usage_command(query))
             print()
             continue
         if query.strip().lower() in ("/undo", "/u"):

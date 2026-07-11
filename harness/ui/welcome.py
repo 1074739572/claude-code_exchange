@@ -11,6 +11,7 @@ from harness.settings import WORKDIR
 from harness.ui import theme
 from harness.ui.banner import TAGLINE, print_hero
 from harness.modes import format_mode_status, get_current_mode_profile, get_mode
+from harness.usage import format_usage_welcome_line
 from harness.todos.format import format_todos_welcome_line
 
 try:
@@ -39,7 +40,10 @@ def _chapter_line() -> str | None:
 
 
 def _commands_hint() -> str:
-    return "/model  /mode  /undo  /resume  /clear  /banner  /help  ·  Esc/Ctrl+C rollback  ·  q exit"
+    return (
+        "/model  /mode  /usage  /undo  /resume  /clear  /banner  /help"
+        "  ·  Esc/Ctrl+C rollback  ·  q exit"
+    )
 
 
 def render_welcome(*, session_source: str | None = None) -> None:
@@ -54,6 +58,7 @@ def render_welcome(*, session_source: str | None = None) -> None:
     stats = session_stats()
     project_line = _chapter_line()
     tasks_line = format_todos_welcome_line()
+    usage_line = format_usage_welcome_line()
     mode_line = format_mode_status()
     mode_profile = get_current_mode_profile()
     mode_short = mode_profile.label if mode_profile else get_mode()
@@ -74,6 +79,8 @@ def render_welcome(*, session_source: str | None = None) -> None:
             print(f"已恢复：{session_source}")
         if tasks_line:
             print(f"任务：{tasks_line}")
+        if usage_line:
+            print(f"用量：{usage_line}")
         if project_line:
             print(project_line)
         print(_commands_hint())
@@ -101,6 +108,8 @@ def render_welcome(*, session_source: str | None = None) -> None:
         table.add_row("已恢复", session_source)
     if tasks_line:
         table.add_row("Tasks", tasks_line)
+    if usage_line:
+        table.add_row("Usage", usage_line)
     if project_line:
         table.add_row("Project", project_line)
 

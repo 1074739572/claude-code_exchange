@@ -5,7 +5,7 @@ from __future__ import annotations
 from harness.models import get_model_profile
 from harness.providers.router import create_provider_message
 from harness.ui.renderer import renderer
-from harness.usage import parse_cache_usage
+from harness.usage import parse_cache_usage, record_usage
 
 
 def _format_llm_tag(profile) -> str:
@@ -17,7 +17,7 @@ def _format_llm_tag(profile) -> str:
     return tag
 
 
-def _log_cache_usage(response) -> None:
+def _log_cache_usage(response, *, model_id: str) -> None:
     parsed = parse_cache_usage(getattr(response, "usage", None))
     if parsed is None:
         return
@@ -26,6 +26,10 @@ def _log_cache_usage(response) -> None:
     renderer.muted(
         f"  [cache] hit={parsed.hit_tokens} miss={parsed.miss_tokens} ({rate}){out_part}"
     )
+    try:
+        record_usage(model=model_id, cache=parsed)
+    except OSError as exc:
+        renderer.warn(f"usage ledger write failed: {exc}")
 
 
 def create_message(
@@ -47,7 +51,7 @@ def create_message(
             tools=tools,
         )
 
-    _log_cache_usage(response)
+    _log_cache_usage(response, model_id=profile.id)
 
     reported = getattr(response, "model", None)
     if reported and reported != profile.api_model:
