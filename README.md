@@ -91,7 +91,8 @@ improved_harness/
     ├── hooks.py            # Pre/Post tool hooks
     ├── skills_loader.py
     ├── tasks.py / worktree.py / usage.py
-    ├── agent/              # compact / recovery / subagent / cron / background
+    ├── agent/              # compact/ + recovery / cancel / cron / background
+    │   └── compact/        # sizing · messages · persist · layers · summarize · pipeline
     ├── prompts/            # static / dynamic / ephemeral
     ├── project/            # session / resume / clear / undo
     ├── todos/              # todo 状态与格式化

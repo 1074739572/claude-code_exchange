@@ -40,7 +40,7 @@ class TestSafeInputBudget(unittest.TestCase):
 
 class TestSummarizeHistoryFallback(unittest.TestCase):
     def test_returns_fallback_on_api_error(self) -> None:
-        import harness.agent.compact as compact
+        import harness.agent.compact.summarize as summarize_mod
 
         class Boom(Exception):
             pass
@@ -48,8 +48,8 @@ class TestSummarizeHistoryFallback(unittest.TestCase):
         def boom(**kwargs):
             raise Boom("Range of input length should be [1, 30720]")
 
-        with unittest.mock.patch.object(compact, "create_message", side_effect=boom):
-            with unittest.mock.patch.object(compact, "get_model", return_value="m1"):
+        with unittest.mock.patch.object(summarize_mod, "create_message", side_effect=boom):
+            with unittest.mock.patch.object(summarize_mod, "get_model", return_value="m1"):
                 result = summarize_history([{"role": "user", "content": "hi"}])
         self.assertIn("Compact summary unavailable", result)
 
@@ -70,14 +70,14 @@ class TestSummarizeHistoryFallback(unittest.TestCase):
 
 class TestCompactHistoryTail(unittest.TestCase):
     def test_compact_history_keeps_recent_tail(self) -> None:
-        import harness.agent.compact as compact
+        import harness.agent.compact.pipeline as pipeline
 
         messages = [{"role": "user", "content": f"msg-{index}"} for index in range(12)]
         messages.append({"role": "assistant", "content": "latest assistant"})
         messages.append({"role": "user", "content": "latest user"})
 
-        with unittest.mock.patch.object(compact, "write_transcript", return_value=Path("t.jsonl")):
-            with unittest.mock.patch.object(compact, "summarize_history", return_value="SUMMARY"):
+        with unittest.mock.patch.object(pipeline, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(pipeline, "summarize_history", return_value="SUMMARY"):
                 with unittest.mock.patch(
                     "harness.project.session_store.record_compact_boundary"
                 ):
@@ -91,7 +91,7 @@ class TestCompactHistoryTail(unittest.TestCase):
         self.assertEqual(result[-2]["content"], "latest assistant")
 
     def test_compact_focus_outranks_stale_summary_goal(self) -> None:
-        import harness.agent.compact as compact
+        import harness.agent.compact.pipeline as pipeline
 
         messages = [
             {"role": "user", "content": "verify bug 001 and 002"},
@@ -100,8 +100,8 @@ class TestCompactHistoryTail(unittest.TestCase):
         ]
         stale = "## Goal\nVerify bug 001/002 wiring\n"
 
-        with unittest.mock.patch.object(compact, "write_transcript", return_value=Path("t.jsonl")):
-            with unittest.mock.patch.object(compact, "summarize_history", return_value=stale):
+        with unittest.mock.patch.object(pipeline, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(pipeline, "summarize_history", return_value=stale):
                 with unittest.mock.patch(
                     "harness.project.session_store.record_compact_boundary"
                 ):
@@ -114,15 +114,15 @@ class TestCompactHistoryTail(unittest.TestCase):
         self.assertNotIn(LATEST_USER_FOCUS_MARKER, result[0]["content"])
 
     def test_reactive_compact_also_focuses_latest_user(self) -> None:
-        import harness.agent.compact as compact
+        import harness.agent.compact.pipeline as pipeline
 
         messages = [
             {"role": "user", "content": "old task"},
             {"role": "assistant", "content": "ok"},
             {"role": "user", "content": "new task only"},
         ]
-        with unittest.mock.patch.object(compact, "write_transcript", return_value=Path("t.jsonl")):
-            with unittest.mock.patch.object(compact, "summarize_history", return_value="OLD GOAL"):
+        with unittest.mock.patch.object(pipeline, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(pipeline, "summarize_history", return_value="OLD GOAL"):
                 with unittest.mock.patch(
                     "harness.project.session_store.record_compact_boundary"
                 ):
@@ -145,7 +145,7 @@ class TestCompactHistoryTail(unittest.TestCase):
 
 class TestMicroCompactPersist(unittest.TestCase):
     def test_micro_compact_persists_instead_of_hard_delete(self) -> None:
-        import harness.agent.compact as compact
+        import harness.agent.compact.persist as persist_mod
 
         long_text = "x" * 500
         messages = [
@@ -162,7 +162,7 @@ class TestMicroCompactPersist(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             tool_dir = Path(tmp) / "tool_results"
-            with unittest.mock.patch.object(compact, "TOOL_RESULTS_DIR", tool_dir):
+            with unittest.mock.patch.object(persist_mod, "TOOL_RESULTS_DIR", tool_dir):
                 result = micro_compact(messages)
 
             old_block = result[0]["content"][0]

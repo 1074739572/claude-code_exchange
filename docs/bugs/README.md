@@ -50,7 +50,7 @@
 | 打断 / orphan tool | repair + abort 回滚 | 001-C |
 | 缓存分层 | static / dynamic / ephemeral + `if_unchanged` | 002 |
 | 默认全新会话 | `/clear` 全清；resume opt-in | 003 |
-| 压缩保真 | compact 留 5 条 tail；六段摘要；micro 落盘；时间分钟级；**最新 user 覆盖摘要旧目标** | 004 |
+| 压缩保真 | compact 留 5 条 tail；六段摘要；micro 落盘；时间分钟级；**最新 user 覆盖摘要旧目标**；`agent/compact/` 模块化 | 004 |
 | 用量可见 | `/usage` 日/周/月/年；提示符 `[model]` | （功能） |
 
 ---

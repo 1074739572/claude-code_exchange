@@ -150,7 +150,7 @@ goals, remaining work, or older tasks in a [Compacted] summary above.
 
 | 模块 | 变更 |
 |------|------|
-| `harness/agent/compact.py` | tail、结构化 prompt、persist、`[Current user request]` focus |
+| `harness/agent/compact/` | tail、结构化 prompt、persist、`[Current user request]` focus（pipeline 等子模块） |
 | `harness/prompts/dynamic.py` | `default_time_granularity()`、`HARNESS_TIME_GRANULARITY` |
 | `tests/test_compact.py` | tail / micro / focus 覆盖摘要旧目标 |
 | `tests/test_dynamic_prompt.py` | 时间粒度默认与 env |
