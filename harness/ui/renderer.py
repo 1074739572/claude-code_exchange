@@ -8,6 +8,12 @@ from contextlib import contextmanager
 
 from harness import terminal_state
 from harness.ui import theme
+from harness.ui.tool_display import (
+    hooks_verbose,
+    summarize_tool_input,
+    summarize_tool_output,
+    tool_ui_mode,
+)
 
 try:
     from rich.console import Console
@@ -71,6 +77,8 @@ class Renderer:
         self._write(message, style=theme.ERROR)
 
     def hook(self, label: str, detail: str = "") -> None:
+        if not hooks_verbose():
+            return
         suffix = f"  {detail}" if detail else ""
         self._write(f"[hook] {label}{suffix}", style=theme.HOOK)
 
@@ -86,24 +94,96 @@ class Renderer:
             return
         if _RICH and _console is not None:
             self._write("")
-            _console.print(Panel(text, title="Assistant", border_style=theme.ACCENT, padding=(0, 1)))
+            _console.print(
+                Panel(text, title="Assistant", border_style=theme.ACCENT, padding=(0, 1))
+            )
         else:
             self._write(f"\n{text}")
 
-    def tool_start(self, name: str, tool_input: dict | None = None) -> None:
-        preview = _tool_input_preview(tool_input)
-        if _RICH and _console is not None:
-            body = preview if preview else "running…"
-            _console.print(Panel(body, title=f"⚙ {name}", border_style=theme.TOOL, padding=(0, 1)))
-        else:
-            line = f"> {name}"
-            if preview:
-                line += f"  {preview}"
-            self._write(line, style=theme.TOOL)
+    def tool_intent(self, text: str) -> None:
+        """Show model's short rationale before a tool call (not a full answer panel)."""
+        mode = tool_ui_mode()
+        if mode == "off" or not (text or "").strip():
+            return
+        # Keep to a few lines so narration doesn't become another dump.
+        lines = [ln.rstrip() for ln in text.strip().splitlines() if ln.strip()]
+        preview = " ".join(lines)
+        if len(preview) > 220:
+            preview = preview[:219] + "…"
+        self._write(f"› {preview}", style=theme.MUTED)
 
-    def tool_result(self, preview: str, limit: int = 280) -> None:
-        text = preview if len(preview) <= limit else preview[:limit] + "…"
-        self._write(text, style=theme.MUTED)
+    def tool_start(self, name: str, tool_input: dict | None = None) -> None:
+        mode = tool_ui_mode()
+        if mode == "off":
+            return
+        summary = summarize_tool_input(name, tool_input)
+        if mode == "verbose":
+            preview = _tool_input_preview(tool_input)
+            if _RICH and _console is not None:
+                body = preview if preview else "running…"
+                _console.print(
+                    Panel(
+                        body,
+                        title=f"⚙ {name}",
+                        border_style=theme.TOOL,
+                        padding=(0, 1),
+                    )
+                )
+            else:
+                line = f"> {name}"
+                if preview:
+                    line += f"  {preview}"
+                self._write(line, style=theme.TOOL)
+            return
+        detail = f"  {summary}" if summary else ""
+        self._write(f"● {name}{detail}", style=theme.TOOL)
+
+    def tool_repeat(
+        self,
+        name: str,
+        tool_input: dict | None,
+        *,
+        streak: int,
+        blocked: bool = False,
+    ) -> None:
+        """Collapse identical consecutive calls instead of reprinting full lines."""
+        mode = tool_ui_mode()
+        if mode == "off":
+            return
+        summary = summarize_tool_input(name, tool_input)
+        detail = f"  {summary}" if summary else ""
+        if blocked:
+            self._write(
+                f"⊘ {name}{detail}  (×{streak} identical — blocked)",
+                style=theme.WARN,
+            )
+        else:
+            self._write(
+                f"↻ {name}{detail}  (×{streak} identical)",
+                style=theme.MUTED,
+            )
+
+    def tool_result(
+        self,
+        preview: str,
+        limit: int = 280,
+        *,
+        name: str | None = None,
+        tool_input: dict | None = None,
+    ) -> None:
+        mode = tool_ui_mode()
+        if mode == "off":
+            return
+        if mode == "verbose" or not name:
+            text = preview if len(preview) <= limit else preview[:limit] + "…"
+            self._write(text, style=theme.MUTED)
+            return
+        # Don't dump full result again for repeat-guard blocks — one line is enough
+        if str(preview).startswith("[RepeatGuard]"):
+            self._write("  → blocked duplicate call", style=theme.WARN)
+            return
+        summary = summarize_tool_output(name, preview, tool_input=tool_input)
+        self._write(f"  → {summary}", style=theme.MUTED)
 
     def plain(self, message: str) -> None:
         self._write(message)

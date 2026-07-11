@@ -87,10 +87,19 @@ def _assistant_text_blocks(content) -> list[str]:
 
 
 def print_turn_assistants(messages: list, turn_start: int) -> None:
+    """Print final assistant prose for this turn (skip tool-rounds already narrated live)."""
     for msg in messages[turn_start:]:
         if msg.get("role") != "assistant":
             continue
-        for text in _assistant_text_blocks(msg.get("content")):
+        content = msg.get("content")
+        # Tool rounds: intent text was already shown via renderer.tool_intent during the loop.
+        if isinstance(content, list) and any(
+            (isinstance(b, dict) and b.get("type") == "tool_use")
+            or (getattr(b, "type", None) == "tool_use")
+            for b in content
+        ):
+            continue
+        for text in _assistant_text_blocks(content):
             console.terminal_print(text)
 
 

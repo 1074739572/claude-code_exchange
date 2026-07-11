@@ -1,0 +1,5 @@
+# Optional deps for SWE-bench / mini-eval live extras
+datasets>=2.16.0
+pyarrow>=14.0.0
+# swebench>=3.0 is Linux/macOS only (imports Unix `resource`).
+# On Windows: prediction works via parquet/smoke; official --eval uses Docker.

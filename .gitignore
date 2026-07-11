@@ -18,12 +18,17 @@ venv/
 .rag/
 .project/
 
+# Eval run artifacts
+evals/results/
+evals/swebench/fixtures/*.parquet
+
 # Local reference corpus (large docx etc.)
 files/
 
 cloud_project/
 output/
 *.txt
+!requirements-eval.txt
 *.docx
 delivery/
 

@@ -3,7 +3,11 @@
 from harness.settings import WORKDIR
 
 PROMPT_SECTIONS = {
-    "identity": "You are a coding agent. Act, don't explain.",
+    "identity": (
+        "You are a coding agent. Act, don't explain. "
+        "Before tool calls, write one short sentence on why you need that tool "
+        "(for the user); then call the tool. Do not write long plans before acting."
+    ),
     "tools": (
         "Available tools: bash, read_file, write_file, edit_file, glob, "
         "todo_write, task, load_skill, compact, "

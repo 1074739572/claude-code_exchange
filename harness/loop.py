@@ -18,10 +18,11 @@ from harness.agent.recovery import (
     is_prompt_too_long_error,
     with_retry,
 )
+from harness.agent.repeat_guard import RepeatGuard
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
-from harness.messages.blocks import block_field, is_tool_use
+from harness.messages.blocks import block_field, block_text, is_text, is_tool_use
 from harness.messages.repair import finalize_cancelled_tool_round, repair_tool_pairing
 from harness.models import get_model
 from harness.project.session import serialize_messages
@@ -37,6 +38,7 @@ from harness.tools.registry import get_tool_pool
 from harness.todos.format import format_todo_reminder
 from harness.todos.state import note_llm_round_without_todo_update, rounds_since_todo_update
 from harness.ui.renderer import renderer
+from harness.ui.tool_display import tool_ui_mode
 
 agent_lock = threading.Lock()
 
@@ -61,17 +63,43 @@ def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, m
     )
 
 
-def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) -> bool:
-    """Run until the agent finishes or cancel is requested. Returns True if interrupted."""
+def agent_loop(
+    messages: list,
+    context: dict,
+    *,
+    turn_start: int | None = None,
+    max_rounds: int | None = None,
+) -> bool:
+    """Run until the agent finishes or cancel is requested. Returns True if interrupted.
+
+    max_rounds: optional cap on LLM turns (used by evals). None = unlimited.
+    """
     from harness.prompts.ephemeral import reset_ephemeral_cache
 
     reset_ephemeral_cache()
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
+    llm_rounds = 0
+    repeat_guard = RepeatGuard()
 
     while True:
         if is_cancelled():
             return True
+
+        if max_rounds is not None and llm_rounds >= max_rounds:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"[Stopped] reached max_rounds={max_rounds}",
+                        }
+                    ],
+                }
+            )
+            trigger_hooks("Stop", messages)
+            return False
 
         fired = consume_cron_queue()
         for job in fired:
@@ -91,6 +119,7 @@ def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) 
         tools, handlers = get_tool_pool()
 
         try:
+            llm_rounds += 1
             response = call_llm(messages, context, tools, state, max_tokens)
         except Exception as exc:
             if is_cancelled():
@@ -137,11 +166,30 @@ def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) 
             if is_cancelled():
                 finalize_cancelled_tool_round(messages, response.content, results)
                 return True
+            # Show the model's brief "why" text before tools (human UI only).
+            if is_text(block):
+                text = block_text(block).strip()
+                if text and tool_ui_mode() != "off":
+                    renderer.tool_intent(text)
+                continue
             if not is_tool_use(block):
                 continue
             name = block_field(block, "name", "")
             tool_input = block_field(block, "input", {}) or {}
-            renderer.tool_start(name, tool_input if isinstance(tool_input, dict) else None)
+            streak, should_block = repeat_guard.note(
+                name, tool_input if isinstance(tool_input, dict) else {}
+            )
+            if streak > 1:
+                renderer.tool_repeat(
+                    name,
+                    tool_input if isinstance(tool_input, dict) else None,
+                    streak=streak,
+                    blocked=should_block,
+                )
+            else:
+                renderer.tool_start(
+                    name, tool_input if isinstance(tool_input, dict) else None
+                )
 
             if name == "compact":
                 messages[:] = compact_history(messages)
@@ -154,8 +202,29 @@ def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) 
                 compacted_now = True
                 break
 
+            if should_block and name != "compact":
+                output = repeat_guard.block_message(name, streak)
+                renderer.tool_result(
+                    output,
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block_field(block, "id", ""),
+                        "content": output,
+                    }
+                )
+                continue
+
             blocked = trigger_hooks("PreToolUse", block)
             if blocked:
+                renderer.tool_result(
+                    str(blocked),
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -171,6 +240,11 @@ def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) 
                     f"[Background task {bg_id} started] "
                     "Result will arrive as a task_notification."
                 )
+                renderer.tool_result(
+                    output,
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -183,8 +257,11 @@ def agent_loop(messages: list, context: dict, *, turn_start: int | None = None) 
             handler = handlers.get(name)
             output = call_tool_handler(handler, tool_input, name)
             trigger_hooks("PostToolUse", block, output)
-            renderer.tool_result(str(output))
-
+            renderer.tool_result(
+                str(output),
+                name=name,
+                tool_input=tool_input if isinstance(tool_input, dict) else None,
+            )
             if name == "todo_write":
                 had_todo_write = True
                 from harness.prompts.ephemeral import reset_ephemeral_cache

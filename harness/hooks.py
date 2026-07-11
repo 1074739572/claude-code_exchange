@@ -63,6 +63,10 @@ def permission_hook(block):
 
 
 def log_hook(block):
+    from harness.ui.tool_display import hooks_verbose
+
+    if not hooks_verbose():
+        return None
     print(f"\033[90m[HOOK] {block_field(block, 'name', '')}\033[0m")
     return None
 
@@ -77,11 +81,19 @@ def large_output_hook(block, output):
 
 
 def user_prompt_hook(query: str):
+    from harness.ui.tool_display import hooks_verbose
+
+    if not hooks_verbose():
+        return None
     print(f"\033[90m[HOOK] UserPromptSubmit: {WORKDIR}\033[0m")
     return None
 
 
 def stop_hook(messages: list):
+    from harness.ui.tool_display import hooks_verbose
+
+    if not hooks_verbose():
+        return None
     tool_count = 0
     for message in messages:
         content = message.get("content")

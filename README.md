@@ -131,7 +131,40 @@ python main.py
 
 常用命令：`/help`、`/model`、`/usage`、`/clear`、`/resume`、`/resume project`。
 
+```text
+› Looking up the ICML 2024 proceedings index for Ping Yang
+● mcp__fetch__fetch  url=https://proceedings.mlr.press/v235/
+  → 42 lines · …
+● edit_file  harness/loop.py
+  → Edited harness/loop.py
+```
+
+工具调用默认 **摘要展示**（给人看），完整结果仍进对话给模型。`› …` 是模型在调工具前写的一句意图（若模型没写则没有）。
+
+- `HARNESS_TOOL_UI=compact`（默认）| `verbose`（旧式大面板+原文预览）| `off`
+- `HARNESS_VERBOSE=1` 恢复 `[HOOK] …` 调试行
+- 同一工具+相同参数连续调用满 3 次会被拦截（`HARNESS_REPEAT_LIMIT`），避免死循环刷屏
+
 提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
+
+## 评测（mini-eval / SWE-bench）
+
+本地能力回归：
+
+```sh
+python -m evals
+python -m evals --live
+```
+
+SWE-bench Lite（克隆仓库 → 跑本 harness → 产出 patch）：
+
+```sh
+pip install -r requirements-eval.txt
+python -m evals.swebench --limit 1
+python -m evals.swebench --limit 1 --eval   # 需 Docker Desktop；官方 resolve 打分
+```
+
+结果在 `evals/results/`（含 `swebench/latest_report.json`）。
 
 ## MCP（可选插件）
 
