@@ -1,6 +1,71 @@
 # Improved Harness
 
-基于 `s20_comprehensive` 的**模块化改进版** Agent Harness：同一套循环，拆成可维护的包结构，内置 skills，并预留真实 MCP 接入。
+基于 [shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 的 Agent Harness 改进版。
+
+上游是一套「从零拆解 Claude Code 式 harness」的教学仓库；本仓库从其中的综合章 **`s20_comprehensive`**（单文件 `code.py`）出发，拆成可维护的包，并在真实使用中持续修问题、加能力。
+
+本仓库远程：https://github.com/1074739572/claude-code_exchange
+
+---
+
+## 代码从哪来
+
+| 项 | 说明 |
+|----|------|
+| 上游仓库 | https://github.com/shareAI-lab/learn-claude-code |
+| 逻辑基线 | `s20_comprehensive/code.py`（约 2100 行单文件综合版） |
+| 教学对应 | s01–s20：loop / tools / hooks / todo / subagent / skills / compact / memory / recovery / tasks / background / cron / teams / worktree / MCP |
+| 本仓库做了什么 | 模块化拆包 + 多模型 / RAG / 会话与压缩 / UI 等工程化改进（见下表） |
+
+克隆上游（对照用）：
+
+```sh
+git clone https://github.com/shareAI-lab/learn-claude-code
+cd learn-claude-code
+```
+
+---
+
+## 我们做了哪些改进
+
+相对上游 `s20` 单文件版，以及后续在真实任务里踩坑后的修复：
+
+### 结构与基础设施
+
+| 改进 | 说明 |
+|------|------|
+| 包结构拆分 | 单文件 → `harness/` 按子系统拆包，便于测试与替换 |
+| Skills 自包含 | 自带 `skills/`，不依赖上游仓库根目录 |
+| MCP 双模式 | `RealMCPClient`（stdio）+ `MockMCPClient`；配置在 `config/mcp.json` |
+| MCP 权限元数据 | 用 `destructive` 等元数据驱动确认，而不是按名字硬匹配 |
+| 多模型 Provider | Anthropic + OpenAI 兼容路由；CLI `/model` 选择 |
+| RAG 检索 | `harness/rag/`：文档切块、索引、工具侧检索 |
+
+### 会话与任务（真实使用踩坑后）
+
+| 改进 | 说明 | 记录 |
+|------|------|------|
+| Resume OpenCode 模式 | 默认全新会话；`/clear` 一次清干净；续项目需 `/resume project` 显式 opt-in | [003](docs/bugs/003-resume-opt-in.md) |
+| Todo 持久化与提醒 | `.project/todos.json`；每轮注入；多轮无更新时 reminder | [001](docs/bugs/001-todo-drift.md) |
+| 中断与回滚 | Esc / SIGINT 停当前轮；orphan `tool_use` 修复，避免 API 400 | [001](docs/bugs/001-todo-drift.md) |
+| Prompt 缓存分层 | static / dynamic / ephemeral 分离，提高 cache hit | [002](docs/bugs/002-prompt-cache-vs-dynamic-context.md) |
+| 上下文压缩 Phase 1 | compact 保留尾部；结构化摘要；micro_compact 落盘可恢复；时间默认分钟粒度 | [004](docs/bugs/004-context-compaction.md) |
+| Compact 输入预算 | 按模型上下文自适应；识别 DeepSeek `30720` 等超限错误 | — |
+
+### 交互与体验
+
+| 改进 | 说明 |
+|------|------|
+| 欢迎页 / Session 面板 | Rich UI，中文状态行 |
+| 模型 / 模式选择器 | 终端 ↑↓ 菜单 |
+| 中文 CLI 文案 | `/help`、`/resume`、`/clear` 等 |
+| 模式与子 Agent 配置 | `config/modes*.json`、`config/agents.json` |
+
+问题与取舍的详细说明在 [`docs/bugs/`](docs/bugs/README.md)，按编号记录「现象 → 根因 → 改了什么」。
+
+后续改什么不写死路线图——有新痛点再一起商量，改完补一条 bug 记录即可。
+
+---
 
 ## 目录结构
 
@@ -9,95 +74,72 @@ improved_harness/
 ├── main.py                 # CLI 入口
 ├── requirements.txt
 ├── .env.example
-├── config/
-│   └── mcp.json            # MCP server 配置（stdio）
-├── skills/                 # 内置技能（从仓库 skills/ 复制）
-│   ├── agent-builder/
-│   ├── mcp-builder/
-│   ├── code-review/
-│   └── pdf/
+├── config/                 # mcp / agents / modes 配置
+├── skills/                 # 内置技能
+├── tests/                  # 单元测试
+├── docs/
+│   ├── bugs/               # 问题与改进记录（001–004…）
+│   └── CHANGELOG-*.md      # 阶段性改动总览
+├── scripts/                # 实验与文档构建脚本
 └── harness/                # 核心包
-    ├── settings.py         # 路径、LLM 客户端、常量
-    ├── loop.py             # agent_loop（主循环）
+    ├── loop.py             # agent 主循环
     ├── cli.py              # 交互式 CLI
-    ├── hooks.py            # PreToolUse / PostToolUse / Stop
-    ├── prompts.py          # system prompt 组装
-    ├── context.py          # 记忆、MCP、队友状态
-    ├── skills_loader.py    # scan_skills + load_skill
-    ├── tasks.py            # 持久化任务图
-    ├── worktree.py         # git worktree 隔离
-    ├── tools/
-    │   ├── filesystem.py   # bash / read / write / edit / glob
-    │   ├── todo.py
-    │   ├── dispatch.py
-    │   └── registry.py     # 27 个内置工具 + handler 表
-    ├── agent/
-    │   ├── compact.py      # 四层压缩
-    │   ├── recovery.py     # 429/529/max_tokens 恢复
-    │   ├── background.py   # 慢 bash 后台执行
-    │   ├── cron.py         # 定时任务
-    │   └── subagent.py     # 一次性子 Agent
-    ├── teams/
-    │   ├── bus.py          # MessageBus
-    │   ├── protocol.py     # plan/shutdown 协议
-    │   └── teammate.py     # 持久队友线程
-    └── mcp/
-        ├── config.py       # 读取 config/mcp.json
-        ├── base.py         # MockMCPClient
-        ├── mock.py         # docs / deploy 教学 mock
-        ├── client.py       # RealMCPClient（官方 SDK stdio）
-        └── pool.py         # connect_mcp + assemble_tool_pool
+    ├── settings.py         # 路径与常量
+    ├── llm.py / models.py  # 调用与模型表
+    ├── context.py          # 记忆等上下文
+    ├── hooks.py            # Pre/Post tool hooks
+    ├── skills_loader.py
+    ├── tasks.py / worktree.py / usage.py
+    ├── agent/              # compact / recovery / subagent / cron / background
+    ├── prompts/            # static / dynamic / ephemeral
+    ├── project/            # session / resume / clear / undo
+    ├── todos/              # todo 状态与格式化
+    ├── tools/              # filesystem / registry / dispatch
+    ├── providers/          # Anthropic / OpenAI-compat
+    ├── rag/                # 检索
+    ├── mcp/                # MCP 客户端与池
+    ├── teams/              # 多队友
+    ├── modes/ / agents/    # 模式与 typed subagent
+    ├── messages/           # repair / sanitize
+    └── ui/                 # welcome / picker / interrupt
 ```
+
+运行时落盘（相对工作目录 cwd）：
+
+| 路径 | 内容 |
+|------|------|
+| `.project/` | session、todos、state、history |
+| `.transcripts/` | compact 前完整备份 |
+| `.memory/MEMORY.md` | 长期记忆 |
+| `.tasks/` / `.mailboxes/` / `.worktrees/` | 任务图、队友邮箱、worktree |
+| `.rag/` | RAG 索引与 chunks |
+
+---
 
 ## 快速开始
 
 ```sh
 cd improved_harness
-cp .env.example .env          # 填入 ANTHROPIC_API_KEY 和 MODEL_ID
+cp .env.example .env          # 填入 API Key 与 MODEL_ID
 pip install -r requirements.txt
 python main.py
 ```
 
-在**你的工作区目录**（`cwd`）运行 Agent；skills 从本包的 `skills/` 加载，任务/邮箱/worktree 状态写在 cwd 下的 `.tasks/`、`.mailboxes/` 等。
+在**你的工作区目录**（cwd）跑 Agent；skills 从本包 `skills/` 加载；会话与任务状态写在 cwd 下的 `.project/` 等目录。
 
-## 与 s20 单文件版的差异
+常用命令：`/help`、`/model`、`/clear`、`/resume`、`/resume project`。
 
-| 项 | s20 `code.py` | improved_harness |
-|----|---------------|------------------|
-| 结构 | 单文件 ~2100 行 | 按子系统拆包 |
+---
+
+## 与上游 s20 的对照（一眼）
+
+| 项 | 上游 `s20_comprehensive/code.py` | 本仓库 |
+|----|----------------------------------|--------|
+| 结构 | 单文件 | `harness/` 分包 |
 | Skills | 依赖仓库根 `skills/` | 自带 `skills/` |
-| MCP | 仅 mock | mock + `config/mcp.json` 真实 stdio |
-| 权限 | deploy 名字匹配 | 读 MCP `destructive` 元数据 |
-| 启动 | 手动 connect | 可 `bootstrap_mcp_servers()` 预连 |
+| MCP | 多为 mock | mock + 真实 stdio |
+| 模型 | 偏 Anthropic 教学默认 | 多 Provider + `/model` |
+| 会话 | 教学向 | OpenCode 默认全新 + opt-in resume |
+| 压缩 | 基础四层 | 尾部保留 + 结构化摘要 + tool 落盘 |
 
-## 内置 Skills
-
-| 名称 | 用途 |
-|------|------|
-| agent-builder | Agent 架构与子 Agent 模式 |
-| mcp-builder | 搭建 MCP Server |
-| code-review | 代码审查 |
-| pdf | PDF 处理 |
-
-Agent 在 system prompt 中看到目录，需要时用 `load_skill("mcp-builder")` 加载全文。
-
-## 配置 MCP
-
-编辑 `config/mcp.json`：
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/your/workspace"]
-    }
-  }
-}
-```
-
-启动时会自动连接；也可在对话中说 `connect_mcp docs` 连接 mock 服务器。
-
-## 改进路线图
-
-见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+更细的模块职责见 [ARCHITECTURE.md](ARCHITECTURE.md)。

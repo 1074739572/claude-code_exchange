@@ -129,15 +129,15 @@ HARNESS_TIME_GRANULARITY=seconds   # 默认 minute
 
 ---
 
-## 遗留 / Phase 2–3
+## 仍观察（未改，有痛点再商量）
 
-| 优先级 | 项 | 说明 |
-|--------|-----|------|
-| P1 | `snip_compact` 无语义硬切 | >50 条消息中间一刀，仍可能丢章节边界 |
-| P1 | 被动压缩阈值 | 仅 50KB 硬限；可加 `SOFT_LIMIT = 0.6 * CONTEXT_LIMIT` 预热区 |
-| P2 | 自动 memory 写回 | 用户纠正、约束未写入 `.memory/constraints.md` |
-| P2 | transcript 消费 | `.transcripts/` 已写但未用于恢复决策 |
-| P2 | compact 与用户新指令冲突检测 | 见 [001](./001-todo-drift.md) 类型 B 遗留 |
+| 项 | 说明 |
+|----|------|
+| `snip_compact` 无语义硬切 | >50 条消息中间一刀，仍可能丢章节边界 |
+| 仅 50KB 硬限触发 compact | 没有更早的预热压缩 |
+| 自动 memory 写回 | 用户纠正、约束未写入 `.memory/` |
+| transcript 消费 | `.transcripts/` 已写但未用于恢复决策 |
+| compact 与用户新指令冲突 | 见 [001](./001-todo-drift.md) 类型 B |
 
 ---
 

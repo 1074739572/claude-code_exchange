@@ -153,14 +153,14 @@ HARNESS_WELCOME_PROJECT=1      # Welcome 显示章节行
 
 ---
 
-## 四、未做 / 待办
+## 四、当时仍观察（不是路线图）
 
 | 项 | 说明 |
 |----|------|
-| 多 agent 并行的 cwd 分桶 | 当前 `.project/` 仍按 cwd 共享；建议用 git worktree，或后续给 settings 加 `HARNESS_PROJECT_DIR` env |
-| 001 B 类（compact 摘要压过最新 user 意图） | 仅 focus 注入缓解，未彻底修 |
-| 子 agent 共享 todo | 当前 `task` 子 agent 没有 todo_write 工具，跟 Claude Code 一致；多 agent 协作建议用 `.tasks/` 板 |
-| thesis 项目的 current_chapter 脏数据 | `.project/state.json` 里 `current_chapter: "done"` 应为 `"08"`；`/clear all` 或手动 project_set_chapter 修正 |
+| 多 agent 并行的 cwd 分桶 | `.project/` 仍按 cwd 共享；可用 git worktree 隔离 |
+| 001 B 类（compact 摘要压过最新 user 意图） | 仅 focus 注入缓解 |
+| 子 agent 共享 todo | `task` 子 agent 无 todo_write；协作可用 `.tasks/` |
+| thesis `current_chapter` 脏数据 | 可用 `/clear` 或手动修正 |
 
 ---
 
