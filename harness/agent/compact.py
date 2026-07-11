@@ -57,16 +57,51 @@ def collect_tool_results(messages: list):
     return found
 
 
-def persist_large_output(tool_use_id: str, output: str) -> str:
-    if len(output) <= PERSIST_THRESHOLD:
-        return output
+COMPACT_TAIL_COUNT = 5
+_MICRO_COMPACT_MIN_CHARS = 120
+
+_STRUCTURED_SUMMARY_SECTIONS = (
+    "## Goal",
+    "## User Constraints",
+    "## Changed Files",
+    "## Key Findings",
+    "## Remaining Work",
+    "## Do NOT Forget",
+)
+
+
+def _write_tool_result_to_disk(tool_use_id: str, output: str) -> Path:
     TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     path = TOOL_RESULTS_DIR / f"{tool_use_id}.txt"
     if not path.exists():
         path.write_text(output, encoding="utf-8")
+    return path
+
+
+def persist_large_output(tool_use_id: str, output: str) -> str:
+    if len(output) <= PERSIST_THRESHOLD:
+        return output
+    path = _write_tool_result_to_disk(tool_use_id, output)
     return (
         f"<persisted-output>\nFull output: {path}\n"
         f"Preview:\n{output[:2000]}\n</persisted-output>"
+    )
+
+
+def persist_recallable_output(
+    tool_use_id: str,
+    output: str,
+    *,
+    min_len: int = _MICRO_COMPACT_MIN_CHARS,
+    preview_chars: int = 500,
+) -> str:
+    """Persist compacted tool output so the agent can read_file the full text."""
+    if len(output) <= min_len:
+        return output
+    path = _write_tool_result_to_disk(tool_use_id, output)
+    return (
+        f"<persisted-output compacted>\nFull output: {path}\n"
+        f"Preview:\n{output[:preview_chars]}\n</persisted-output>"
     )
 
 
@@ -127,9 +162,12 @@ def micro_compact(messages: list) -> list:
     tool_results = collect_tool_results(messages)
     if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
         return messages
-    for _, _, block in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
-        if len(str(block.get("content", ""))) > 120:
-            block["content"] = "[Earlier tool result compacted. Re-run if needed.]"
+    for message_index, block_index, block in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
+        text = str(block.get("content", ""))
+        if len(text) <= _MICRO_COMPACT_MIN_CHARS:
+            continue
+        tool_id = block.get("tool_use_id") or f"micro-{message_index}-{block_index}"
+        block["content"] = persist_recallable_output(tool_id, text)
     return messages
 
 
@@ -200,17 +238,30 @@ def _safe_input_budget(model_id: str | None = None) -> int:
     return max(available * _CHARS_PER_TOKEN, 12_000)
 
 
+def _structured_summary_instruction() -> str:
+    sections = "\n".join(_STRUCTURED_SUMMARY_SECTIONS)
+    return (
+        f"Working directory: {WORKDIR}\n"
+        "Python package lives at `harness/` in this repo (NOT `src/harness/`).\n"
+        "Summarize this coding-agent conversation so work can continue after compaction.\n"
+        "Use exactly these markdown headings and fill each section:\n"
+        f"{sections}\n\n"
+        "Guidelines:\n"
+        "- Goal: one sentence on what the user is trying to accomplish now.\n"
+        "- User Constraints: explicit requirements, paths, formats, tone, deadlines.\n"
+        "- Changed Files: bullet list of paths touched and what changed.\n"
+        "- Key Findings: facts, errors, metrics, or decisions that must survive compaction.\n"
+        "- Remaining Work: concrete next steps; include drift complaints or wrong paths.\n"
+        "- Do NOT Forget: non-negotiables the agent must not drop (e.g. sample doc paths).\n"
+    )
+
+
 def summarize_history(messages: list) -> str:
     budget = _safe_input_budget()
     conversation = json.dumps(messages, default=str)[:budget]
     prompt = (
-        f"Working directory: {WORKDIR}\n"
-        "Python package lives at `harness/` in this repo (NOT `src/harness/`).\n"
-        "Summarize this coding-agent conversation so work can continue. "
-        "Preserve current goal, key findings, changed files, remaining work, "
-        "and user constraints. If the user complained about drift or wrong paths, "
-        "state that explicitly in remaining work.\n\n"
-        f"[Conversation trimmed to last {budget} chars for summarization]\n\n"
+        _structured_summary_instruction()
+        + f"\n[Conversation trimmed to last {budget} chars for summarization]\n\n"
         + conversation
     )
     try:
@@ -246,7 +297,11 @@ def compact_history(messages: list) -> list:
     transcript = write_transcript(messages)
     print(f"  \033[36m[compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
-    compacted = [{"role": "user", "content": f"[Compacted]\n\n{summary}"}]
+    tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)
+    compacted = [
+        {"role": "user", "content": f"[Compacted]\n\n{summary}"},
+        *tail,
+    ]
     record_compact_boundary("auto", estimate_size(messages), transcript, compacted)
     return compacted
 
@@ -257,7 +312,7 @@ def reactive_compact(messages: list) -> list:
     transcript = write_transcript(messages)
     print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
-    tail = _keep_tail(messages, count=5)
+    tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)
     compacted = [
         {"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
         *tail,

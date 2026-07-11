@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Literal
 
@@ -22,11 +23,19 @@ def _format_time(*, granularity: TimeGranularity) -> str:
     return now.isoformat(timespec="seconds")
 
 
+def default_time_granularity() -> TimeGranularity:
+    """Minute by default so ephemeral context can skip unchanged turns."""
+    raw = os.getenv("HARNESS_TIME_GRANULARITY", "minute").strip().lower()
+    if raw in ("seconds", "second", "s"):
+        return "seconds"
+    return "minute"
+
+
 def build_session_context(
     context: dict,
     *,
     include_time: bool = True,
-    time_granularity: TimeGranularity = "seconds",
+    time_granularity: TimeGranularity | None = None,
     include_model: bool = True,
     include_mode: bool = True,
     include_memories: bool = True,
@@ -36,9 +45,10 @@ def build_session_context(
 ) -> str:
     """Dynamic harness state for the model (ephemeral message body, not static system)."""
     sections: list[str] = []
+    granularity = time_granularity or default_time_granularity()
 
     if include_time:
-        sections.append(f"Current time: {_format_time(granularity=time_granularity)}")
+        sections.append(f"Current time: {_format_time(granularity=granularity)}")
 
     if include_model:
         current = get_model()

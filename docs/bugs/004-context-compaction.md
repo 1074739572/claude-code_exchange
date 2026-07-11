@@ -1,0 +1,150 @@
+# 004 — 上下文压缩丢信息（Phase 1 修复）
+
+**状态：** Phase 1 已实施（2026-07）  
+**关联：** [002 缓存与动态上下文](./002-prompt-cache-vs-dynamic-context.md)、compact 崩溃修复（`summarize_history` 模型感知预算）
+
+---
+
+## 现象
+
+长任务（读大文件、多轮 tool、写多章报告）进行到一半后，agent 开始：
+
+- 忘记用户指定的样例路径、章节结构、交付格式
+- 重复已做过的步骤，或跳到无关任务
+- 对已读过的 docx / 大段 tool 输出答「没有上下文」
+
+用户侧常见触发：对话超过 `CONTEXT_LIMIT`（50KB JSON）后触发 `compact_history`，或 `micro_compact` 把旧 tool 结果直接替换成一句占位符。
+
+---
+
+## 背景
+
+`prepare_context()` 在每轮 LLM 调用前按层压缩：
+
+```
+tool_result_budget → snip_compact → micro_compact → compact_history（若仍超 50KB）
+```
+
+设计上借鉴了 Claude Code / OpenCode 的「摘要 + 保留尾部」，但实现不完整：
+
+| 层级 | 设计意图 | 实际缺陷 |
+|------|----------|----------|
+| `compact_history` | 超限时 LLM 摘要 | **只留 1 条摘要**，无尾部消息（`reactive_compact` 才有 tail） |
+| `micro_compact` | 旧 tool 结果瘦身 | **硬删**为 `[Earlier tool result compacted]`，无磁盘路径 |
+| `summarize_history` | 续作所需信息 | 自由文本 prompt，**无固定章节**，约束易丢 |
+| `build_session_context` | 动态 ephemeral | `Current time` 精确到秒，**每轮都变**，破坏 `if_unchanged` 缓存 |
+
+`reactive_compact`（API 报 prompt too long 时）已经做对：摘要 + `_keep_tail(5)`。`compact_history` 却没对齐。
+
+---
+
+## 根因（结构问题，不是模型「忘了」）
+
+1. **主动压缩与被动压缩行为不一致** — 50KB 触发的 `compact_history` 比 overflow 触发的 `reactive_compact` 更激进，长任务更容易在「正常路径」丢上下文。
+2. **micro 层删除不可恢复** — `tool_result_budget` 大输出会 `persist_large_output` 写盘；`micro_compact` 却直接覆盖字符串，agent 无法 `read_file` 找回。
+3. **摘要无 schema** — 模型自由发挥，用户约束、文件路径、剩余步骤在压缩后分布随机。
+4. **ephemeral 时间戳噪声** — 秒级时间让动态上下文每轮不同，浪费 token 且降低 prompt cache 命中。
+
+---
+
+## 对标（为何这么改）
+
+| 产品 | 可借鉴点 |
+|------|----------|
+| **Claude Code** | 多层 cascade；摘要后保留 tail + `compact_boundary`；大输出落盘 |
+| **OpenCode** | **固定摘要模板**（Goal / Constraints / Files / …）；prune 旧 tool 而非硬删 |
+| **Cursor** | 短规则层在压缩后仍存活 |
+| **Gemini CLI** | tool distillation 写磁盘；双阈值主动/被动压缩 |
+
+Phase 1 取舍：**先对齐 OpenCode 模板 + Claude Code tail 保留 + persist-not-delete**，不引入新子系统（memory 写回、soft limit 留 Phase 2/3）。
+
+---
+
+## Phase 1 改进（已实施）
+
+### 1. `compact_history` 保留尾部（对齐 `reactive_compact`）
+
+```python
+# harness/agent/compact.py
+tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)  # 5
+compacted = [{"role": "user", "content": f"[Compacted]\n\n{summary}"}, *tail]
+```
+
+压缩后上下文 = **结构化摘要 + 最近 5 条消息**（含 tool_use/tool_result 配对）。
+
+### 2. 结构化摘要模板
+
+`summarize_history` 要求模型按固定标题输出：
+
+- `## Goal`
+- `## User Constraints`
+- `## Changed Files`
+- `## Key Findings`
+- `## Remaining Work`
+- `## Do NOT Forget`
+
+### 3. `micro_compact` 落盘而非硬删
+
+新增 `persist_recallable_output()`：对 >120 字符的旧 tool 结果写入 `.tool_results/{tool_use_id}.txt`，上下文保留路径 + 500 字 preview。agent 可用 `read_file` 恢复全文。
+
+### 4. 动态时间默认分钟粒度
+
+`build_session_context` 默认 `time_granularity="minute"`；可用环境变量恢复秒级：
+
+```bash
+HARNESS_TIME_GRANULARITY=seconds   # 默认 minute
+```
+
+同一分钟内 ephemeral 上下文不变，利于 `if_unchanged` 跳过重复注入。
+
+---
+
+## 具体例子：CWRF 实施方案
+
+**场景：** 用户要求参照 `files/样例/5 CWRF…实施方案.docx` 写 `output/plan/`，agent 用 tool 读出 ~30KB docx，再写多章 markdown。
+
+### 修复前
+
+1. 读 docx → tool_result 占满上下文  
+2. `micro_compact` 把早期章节结构替换成 `[Earlier tool result compacted]`  
+3. 超 50KB → `compact_history` **只剩一条自由摘要**  
+4. 下一轮 agent 不知道样例路径、章节编号、已写 `02_项目管理方案.md` → 重写或跑偏  
+
+### 修复后
+
+1. 旧 tool 结果 → `<persisted-output compacted>` + `Full output: .tool_results/….txt`  
+2. 超 50KB → 摘要含 **User Constraints**（样例路径、交付目录）+ **Changed Files** + **最近 5 轮对话**  
+3. 若仍缺细节 → `read_file` 恢复 persisted 全文  
+
+---
+
+## 相关文件
+
+| 模块 | 变更 |
+|------|------|
+| `harness/agent/compact.py` | tail 保留、结构化 prompt、`persist_recallable_output`、`COMPACT_TAIL_COUNT` |
+| `harness/prompts/dynamic.py` | `default_time_granularity()`、`HARNESS_TIME_GRANULARITY` |
+| `tests/test_compact.py` | tail / micro persist / 摘要章节测试 |
+| `tests/test_dynamic_prompt.py` | 时间粒度默认与 env |
+
+---
+
+## 遗留 / Phase 2–3
+
+| 优先级 | 项 | 说明 |
+|--------|-----|------|
+| P1 | `snip_compact` 无语义硬切 | >50 条消息中间一刀，仍可能丢章节边界 |
+| P1 | 被动压缩阈值 | 仅 50KB 硬限；可加 `SOFT_LIMIT = 0.6 * CONTEXT_LIMIT` 预热区 |
+| P2 | 自动 memory 写回 | 用户纠正、约束未写入 `.memory/constraints.md` |
+| P2 | transcript 消费 | `.transcripts/` 已写但未用于恢复决策 |
+| P2 | compact 与用户新指令冲突检测 | 见 [001](./001-todo-drift.md) 类型 B 遗留 |
+
+---
+
+## 验证
+
+```bash
+python -m unittest tests.test_compact tests.test_dynamic_prompt -v
+```
+
+新增用例覆盖：`compact_history` 尾部条数、`micro_compact` 写盘路径、摘要 prompt 六段标题、默认分钟时间粒度。

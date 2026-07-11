@@ -21,9 +21,10 @@
 | [001](./001-todo-drift.md) | Agent 偏移（任务表 · 话题 · 会话状态） | A 类 v1 已修复；B/C 部分已修复 | 2026-07 |
 | [002](./002-prompt-cache-vs-dynamic-context.md) | API 缓存命中率优化（分层上下文 + 实验验证） | Phase 1 已实施 | 2026-07 |
 | [003](./003-resume-opt-in.md) | Resume 借鉴 Claude Code（session 自动 / project opt-in） | 已实施 | 2026-07 |
+| [004](./004-context-compaction.md) | 上下文压缩丢信息（Phase 1：tail + 结构化摘要 + persist） | Phase 1 已实施 | 2026-07 |
 
 ## 待记录（草稿）
 
 - compact 摘要与用户新指令冲突时的自动检测 — 见 001 类型 B 遗留
-- micro-compact 掩盖 tool 错误 — 见 001 类型 C 遗留
+- snip_compact 无语义硬切、SOFT_LIMIT 预热压缩 — 见 004 Phase 2
 - 章节进度表（`state.json`）与通用 `todo_write` 职责 — 见 001 类型 A
