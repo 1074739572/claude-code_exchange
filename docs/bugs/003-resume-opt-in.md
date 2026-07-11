@@ -1,7 +1,7 @@
 # 003 — Resume 改成 OpenCode 模式（默认全新，opt-in 续）
 
 **状态：** 已实施（2026-07）  
-**关联：** [001 Agent 偏移](./001-todo-drift.md)、[002 缓存](./002-prompt-cache-vs-dynamic-context.md)
+**关联：** [001 偏移](./001-todo-drift.md)（少自动灌论文 → 少 B 类跑偏）· [002 缓存](./002-prompt-cache-vs-dynamic-context.md) · [004 压缩](./004-context-compaction.md)（长跑保真，与启动边界正交）
 
 ---
 

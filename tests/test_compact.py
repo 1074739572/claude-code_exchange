@@ -9,10 +9,13 @@ from pathlib import Path
 
 from harness.agent.compact import (
     COMPACT_TAIL_COUNT,
+    LATEST_USER_FOCUS_MARKER,
     _safe_input_budget,
     _structured_summary_instruction,
     compact_history,
+    find_latest_user_text,
     micro_compact,
+    reactive_compact,
     summarize_history,
 )
 from harness.agent.recovery import is_prompt_too_long_error
@@ -61,6 +64,8 @@ class TestSummarizeHistoryFallback(unittest.TestCase):
             "## Do NOT Forget",
         ):
             self.assertIn(heading, text)
+        self.assertIn("latest real user instruction", text)
+        self.assertIn("latest user message wins", text)
 
 
 class TestCompactHistoryTail(unittest.TestCase):
@@ -80,8 +85,62 @@ class TestCompactHistoryTail(unittest.TestCase):
 
         self.assertEqual(result[0]["content"], "[Compacted]\n\nSUMMARY")
         self.assertEqual(len(result), 1 + COMPACT_TAIL_COUNT)
-        self.assertEqual(result[-1]["content"], "latest user")
+        self.assertIn(LATEST_USER_FOCUS_MARKER, result[-1]["content"])
+        self.assertIn("latest user", result[-1]["content"])
+        self.assertIn("overrides any conflicting", result[-1]["content"])
         self.assertEqual(result[-2]["content"], "latest assistant")
+
+    def test_compact_focus_outranks_stale_summary_goal(self) -> None:
+        import harness.agent.compact as compact
+
+        messages = [
+            {"role": "user", "content": "verify bug 001 and 002"},
+            {"role": "assistant", "content": "checking chapters"},
+            {"role": "user", "content": "写 CWRF 实施方案，不要验 ch07"},
+        ]
+        stale = "## Goal\nVerify bug 001/002 wiring\n"
+
+        with unittest.mock.patch.object(compact, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(compact, "summarize_history", return_value=stale):
+                with unittest.mock.patch(
+                    "harness.project.session_store.record_compact_boundary"
+                ):
+                    result = compact_history(messages)
+
+        self.assertIn("Verify bug 001/002", result[0]["content"])
+        self.assertEqual(result[-1]["role"], "user")
+        self.assertIn(LATEST_USER_FOCUS_MARKER, result[-1]["content"])
+        self.assertIn("写 CWRF 实施方案", result[-1]["content"])
+        self.assertNotIn(LATEST_USER_FOCUS_MARKER, result[0]["content"])
+
+    def test_reactive_compact_also_focuses_latest_user(self) -> None:
+        import harness.agent.compact as compact
+
+        messages = [
+            {"role": "user", "content": "old task"},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "new task only"},
+        ]
+        with unittest.mock.patch.object(compact, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(compact, "summarize_history", return_value="OLD GOAL"):
+                with unittest.mock.patch(
+                    "harness.project.session_store.record_compact_boundary"
+                ):
+                    result = reactive_compact(messages)
+        self.assertTrue(result[0]["content"].startswith("[Reactive compact]"))
+        self.assertIn("new task only", result[-1]["content"])
+        self.assertIn(LATEST_USER_FOCUS_MARKER, result[-1]["content"])
+
+    def test_find_latest_user_skips_tool_and_compact_markers(self) -> None:
+        messages = [
+            {"role": "user", "content": "real ask"},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "out"}],
+            },
+            {"role": "user", "content": "[Compacted]\n\nold summary"},
+        ]
+        self.assertEqual(find_latest_user_text(messages), "real ask")
 
 
 class TestMicroCompactPersist(unittest.TestCase):

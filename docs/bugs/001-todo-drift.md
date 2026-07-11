@@ -1,8 +1,8 @@
 # 001 — Agent 偏移（任务表 · 话题 · 会话状态）
 
-**状态：** 任务表偏移 v1 已修复；话题/会话偏移 **部分已修复**（2026-07 续）  
+**状态：** A 已修复；B 部分缓解（含 004 compact）；C 大部分已修复（micro 落盘见 004）  
 **影响：** 通用 agent 与论文/RAG 长任务；用户看到「活干了表不对」「问 A 答 B」「打断后全挂」  
-**关联：** [002 缓存与动态上下文](./002-prompt-cache-vs-dynamic-context.md)
+**关联：** [002 缓存](./002-prompt-cache-vs-dynamic-context.md) · [003 Resume](./003-resume-opt-in.md) · [004 压缩](./004-context-compaction.md)
 
 ---
 
@@ -13,8 +13,8 @@
 | 类型 | 用户看到什么 | 主因 | 修复状态 |
 |------|--------------|------|----------|
 | **A. 任务表偏移** | `todo_write` 与真实步骤对不上 | 提醒无全表、未注入 todos、计数按 tool 不按 LLM 回合 | **v1 已修复** |
-| **B. 话题/目标偏移** | 问 meta/写方案，却验 ch07、跑 harness 测试 | compact/resume 摘要压过「本条用户话」 | **部分缓解**（focus 注入） |
-| **C. 会话/工具链偏移** | Ctrl+C 后 400、模型读不存在的路径 | 打断留 orphan `tool_use`、摘要误导路径 | **大部分已修复** |
+| **B. 话题/目标偏移** | 问 meta/写方案，却验 ch07、跑 harness 测试 | compact/resume 摘要压过「本条用户话」 | **部分缓解**（focus + 004 模板/tail） |
+| **C. 会话/工具链偏移** | Ctrl+C 后 400、模型读不存在的路径 | 打断留 orphan `tool_use`、摘要误导路径 | **大部分已修复**（C3 micro 见 004） |
 
 下面分节展开；**A 节**保留原 todo 专项结论，**B/C 节**为 2026-07 真实会话归纳。
 
@@ -133,17 +133,17 @@ system 亦有 `Thesis rewrite: load_skill(thesis-writing)…`。
 | 措施 | 位置 | 作用 |
 |------|------|------|
 | `latest_user_query` 进 ephemeral | `cli.py` 写入 context；`dynamic.py` 注入 | 强调「只答本条」+ 正确路径 `harness/` |
-| compact 摘要模板 | `compact.py` `summarize_history()` | 注明无 `src/harness/`；保留用户抱怨 drift |
-| 用户操作 | `/clear`、首条 prompt 写清「不要继续 compact 任务」 | 立刻有效 |
+| compact 留 tail + 六段摘要 | [004](./004-context-compaction.md) | 压缩后仍带近期对话与 Constraints / Do NOT Forget |
+| **最新 user 覆盖摘要** | [004](./004-context-compaction.md) | compact/reactive 末尾强制 `[Current user request]`，显式 overrides 摘要旧目标 |
+| micro 落盘可恢复 | [004](./004-context-compaction.md) | 旧 tool 结果可 `read_file`，少路径幻觉 |
+| 用户操作 | `/clear`、首条写清「不要继续 compact 任务」 | 立刻有效 |
 
-### B 类遗留 / 建议后续
+### B 类仍观察（有痛点再商量）
 
-| 项 | 建议 |
+| 项 | 说明 |
 |----|------|
-| compact 与 user 冲突 | 摘要固定保留「最后一条用户原话」；或新用户轮询问是否忽略摘要 |
-| thesis resume | 仅 `load_skill(thesis-writing)` 后注入；通用问答不注入 chapter 续写 |
-| 解释模式 | 检测「为什么/偏移/怎么回事」→ 禁止 `write_file`/`edit_file` 一轮 |
-| 双轨进度 | 写实施方案时用新 `project_init` 或不用 chapter 表；步骤靠 `todo_write` |
+| 解释模式 | 问「为什么/偏移」时仍可能去改文件 |
+| 双轨进度 | 论文 `state.json` 与通用 `todo_write` 并存，易误判 |
 
 ---
 
@@ -162,7 +162,7 @@ system 亦有 `Thesis rewrite: load_skill(thesis-writing)…`。
 |---|------|------|------|
 | C1 | **打断留 orphan `tool_use`** | `agent_loop` 在 tool 执行中 `cancel` 返回，assistant 已 append 但无 tool_result | **已修复** — `finalize_cancelled_tool_round()` + `repair_tool_pairing()` |
 | C2 | **`turn_start` 在 compact 后失效** | `messages[:]` 被替换后索引错位，`abort_inflight_turn` 删不干净 | **已修复** — `resolve_turn_start()` + 回滚整轮 |
-| C3 | **micro-compact 吞 tool 报错** | 旧 tool_result 变成 `[Earlier tool result compacted…]` | **未改** — 模型看不到「文件不存在」 |
+| C3 | **micro-compact 吞 tool 报错** | 旧 tool_result 变成占位符，看不到「文件不存在」 | **已缓解（004）** — `persist_recallable_output` 落盘 + preview；极端长会话仍可能漏看错误 |
 | C4 | **`/model` 被 `/mode` 前缀匹配** | `"/model".startswith("/mode")` 为真 | **已修复** — `_match_cli_command()` |
 | C5 | **路径幻觉 `src/harness/`** | compact 摘要/模型臆造；与仓库布局不符 | **部分缓解** — focus 注入 + compact 模板 |
 | C6 | **`WORKDIR` 未 import** | `dynamic.py` / `compact.py` 引用未导入 | **已修复** |
@@ -176,13 +176,13 @@ system 亦有 `Thesis rewrite: load_skill(thesis-writing)…`。
 - `harness/cli.py` — 启动 repair、`_match_cli_command`  
 - `scripts/repair_session.py` — 手动修复损坏 session  
 
-### C 类遗留
+### C 类仍观察
 
 | 项 | 说明 |
 |----|------|
-| micro-compact | 仍可能隐藏关键 tool 错误；长会话需 re-run tool 或提高 `KEEP_RECENT_TOOL_RESULTS` |
-| LLM HTTP 打断 | 协作式 cancel，需等当前请求结束；与 Cursor 同类限制 |
-| `/model` vs provider key | 切模型仍依赖对应 `.env` key，与偏移无关但易误判为「选了没生效」 |
+| micro 预览截断 | 落盘后上下文只有 preview；关键错误仍可能要 `read_file` 全文 |
+| LLM HTTP 打断 | 协作式 cancel，需等当前请求结束 |
+| `/model` vs provider key | 切模型仍依赖对应 `.env` key |
 
 ---
 
@@ -241,14 +241,17 @@ todo_write：先列 3–5 步，仅 1 个 in_progress。
 ## 相关文件（全类偏移）
 
 ```
+docs/bugs/README.md             # 总览与候选下一步
 docs/bugs/001-todo-drift.md     # 本文
-docs/bugs/002-…                 # 缓存 vs 动态上下文（与 A 类 todos 注入权衡）
+docs/bugs/002-…                 # 缓存 vs 动态上下文
+docs/bugs/003-…                 # Resume OpenCode
+docs/bugs/004-…                 # compact 保真
 
 harness/todos/                  # A 类
 harness/prompts/dynamic.py      # A/B：todos + latest_user_query
 harness/prompts/ephemeral.py    # A/B：session-context 注入策略
-harness/agent/compact.py        # B/C：摘要生成
-harness/project/resume.py       # B：thesis resume
+harness/agent/compact.py        # B/C：摘要 / tail / persist（004）
+harness/project/resume.py       # B：thesis resume（003 opt-in）
 harness/messages/repair.py      # C：tool 配对 / 打断
 harness/project/session_undo.py # C：回滚
 harness/cli.py                  # B/C：focus、repair、/model 路由
@@ -285,17 +288,20 @@ skills/thesis-writing/SKILL.md
 
 | 阶段 | 内容 |
 |------|------|
-| 2026-07 初 | 001 v1：todo 整条链路对齐 Claude Code |
-| 2026-07 中 | 用户反馈答非所问、验 ch07、compact 绑架目标 |
-| 2026-07 中 | 002：静态 system + ephemeral 缓存 |
-| 2026-07 末 | 001 扩写：B/C 类偏移 + repair/focus/CLI 修复纳入同一文档 |
-| 待办 | compact 保留最后用户话；thesis resume 条件化；解释模式 hook |
+| 2026-07 初 | 001 v1：todo 整条链路 |
+| 2026-07 中 | 002 缓存分层；B/C 扩写 + repair/focus |
+| 2026-07 末 | 003 OpenCode resume；004 compact Phase 1（缓解 B/C3） |
+| 2026-07 续 | 004：compact 末尾强制最新 user，摘要旧目标不得压过本条 |
+| 仍观察 | 解释模式；snip/预热压缩 — 见 [bugs README](./README.md) |
 
 ---
 
-## 与 002 的关系
+## 与 002 / 003 / 004 的关系
 
-- **001**：模型「做什么」偏了（任务表、话题、session 合法性）  
-- **002**：每轮 API 前缀怎么拼、缓存命中率  
+| 文档 | 管什么 | 和 001 的交界 |
+|------|--------|----------------|
+| **002** | 动态字段放哪、缓存命中 | todos 进 ephemeral，防偏移与省钱可兼得 |
+| **003** | 启动是否灌旧项目 | 从源头少一类 B 类「续写论文」偏移 |
+| **004** | 压上下文时丢不丢约束 | 缓解 B（摘要/tail/**最新 user 置顶**）与 C3（micro 落盘） |
 
-todos 与时间戳等动态字段已从 static system 挪到 ephemeral（002），**减轻 A 类与缓存冲突**，但不单独解决 B 类「摘要目标错误」。
+todos 与时间戳等动态字段已从 static system 挪到 ephemeral（002），**减轻 A 类与缓存冲突**；B 类「摘要目标错误」靠 004 的 focus 消息 + `latest_user_query` 双重约束。

@@ -1,7 +1,7 @@
 # 002 — API 缓存命中率优化（与 001 Todo 防偏移的权衡）
 
-**状态：** Phase 1 已实施 + 实验框架已落地（2026-07）  
-**关联：** [001 — 任务表偏移](./001-todo-drift.md)  
+**状态：** 分层已落地 + 实验框架可用（2026-07）  
+**关联：** [001 偏移](./001-todo-drift.md) · [004 压缩](./004-context-compaction.md)（时间分钟级利于 ephemeral 缓存）  
 **日期：** 2026-07
 
 ---
@@ -318,13 +318,14 @@ python scripts/run_cache_experiment.py --live --rounds 5 --strategy current   # 
 
 ---
 
-## 九、后续（Phase 2 / 3，未做）
+## 九、仍观察（有痛点再商量）
 
-| 阶段 | 内容 |
-|------|------|
-| Phase 2 | Anthropic 系 `system` block 数组 + `cache_control` |
-| Phase 3 | `slim_context`（精简 session 块）、仅在 todo 变更 / reminder 时注入 |
-| 运维习惯 | 同会话少 `/model`、少 compact |
+| 项 | 说明 |
+|----|------|
+| Anthropic `cache_control` | 显式 system block 缓存标记（DeepSeek 自动前缀已够用时可不做） |
+| 更瘦的 ephemeral | 仅在 todo 变更 / reminder 时注入 |
+| 运维习惯 | 同会话少 `/model`、少无触发整段 compact（会打断前缀） |
+| 004 时间粒度 | 已默认分钟；`HARNESS_TIME_GRANULARITY=seconds` 可恢复秒级 |
 
 ---
 
@@ -336,7 +337,7 @@ python scripts/run_cache_experiment.py --live --rounds 5 --strategy current   # 
 | `harness/prompts/dynamic.py` | 会话状态正文 |
 | `harness/prompts/ephemeral.py` | API 尾注 + `if_unchanged` |
 | `harness/prompts/cache_experiment.py` | 策略模拟 |
-| `harness/usage.py` | usage 字段归一化 |
+| `harness/usage/` | usage 字段归一化 + 本地日流水 `/usage` |
 | `harness/loop.py` | 调用与 reset 钩子 |
 | `harness/llm.py` | `[cache]` 日志 |
 | `harness/project/session.py` | 剥 ephemeral 不落盘 |
@@ -366,4 +367,5 @@ python scripts/run_cache_experiment.py --live --rounds 5 --strategy current   # 
 | 中间 | 真实 agent ~40% 命中 |
 | 实验 | 模拟多策略；live 修 400 + usage 字段 |
 | 默认策略 | `if_unchanged`；live **~97%**（受控条件） |
-| 文档 | 本文 Consolidated |
+| 004 | 动态时间默认分钟，减少 ephemeral 每秒抖动 |
+| 文档 | 本文 Consolidated；总览见 [bugs README](./README.md) |

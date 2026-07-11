@@ -59,6 +59,7 @@ def collect_tool_results(messages: list):
 
 COMPACT_TAIL_COUNT = 5
 _MICRO_COMPACT_MIN_CHARS = 120
+LATEST_USER_FOCUS_MARKER = "[Current user request]"
 
 _STRUCTURED_SUMMARY_SECTIONS = (
     "## Goal",
@@ -67,6 +68,17 @@ _STRUCTURED_SUMMARY_SECTIONS = (
     "## Key Findings",
     "## Remaining Work",
     "## Do NOT Forget",
+)
+
+_SKIP_USER_PREFIXES = (
+    "[Compacted]",
+    "[Reactive compact]",
+    "[Current user request]",
+    "[Scheduled]",
+    "[Inbox]",
+    "[snipped ",
+    "<session-context>",
+    "<persisted-output",
 )
 
 
@@ -247,13 +259,81 @@ def _structured_summary_instruction() -> str:
         "Use exactly these markdown headings and fill each section:\n"
         f"{sections}\n\n"
         "Guidelines:\n"
-        "- Goal: one sentence on what the user is trying to accomplish now.\n"
+        "- Goal: MUST reflect the chronologically latest real user instruction, "
+        "not an older task from earlier in the conversation.\n"
+        "- If the latest user message conflicts with earlier goals or a previous "
+        "summary, the latest user message wins — say so in Goal and Do NOT Forget.\n"
         "- User Constraints: explicit requirements, paths, formats, tone, deadlines.\n"
         "- Changed Files: bullet list of paths touched and what changed.\n"
         "- Key Findings: facts, errors, metrics, or decisions that must survive compaction.\n"
         "- Remaining Work: concrete next steps; include drift complaints or wrong paths.\n"
         "- Do NOT Forget: non-negotiables the agent must not drop (e.g. sample doc paths).\n"
     )
+
+
+def _user_text_content(message: dict) -> str | None:
+    if message.get("role") != "user":
+        return None
+    if is_tool_result_message(message):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        text = content.strip()
+        return text or None
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        text = "\n".join(part for part in parts if part).strip()
+        return text or None
+    return None
+
+
+def _is_harness_system_user_text(text: str) -> bool:
+    return any(text.startswith(prefix) for prefix in _SKIP_USER_PREFIXES)
+
+
+def find_latest_user_text(messages: list) -> str | None:
+    """Latest real user instruction (skips tool results and harness injects)."""
+    for message in reversed(messages):
+        text = _user_text_content(message)
+        if text and not _is_harness_system_user_text(text):
+            return text
+    return None
+
+
+def focus_latest_user_message(text: str) -> dict:
+    """User message that must outrank any conflicting compact summary goals."""
+    body = text.strip()
+    return {
+        "role": "user",
+        "content": (
+            f"{LATEST_USER_FOCUS_MARKER}\n"
+            "This is the latest user instruction. It overrides any conflicting "
+            "goals, remaining work, or older tasks in a [Compacted] summary above.\n\n"
+            f"{body}"
+        ),
+    }
+
+
+def _ensure_latest_user_focus(compacted: list, original_messages: list) -> list:
+    latest = find_latest_user_text(original_messages)
+    if not latest:
+        return compacted
+    focused = focus_latest_user_message(latest)
+    # Drop a trailing duplicate plain copy of the same user text (keep one focused).
+    if compacted:
+        trailing = _user_text_content(compacted[-1])
+        if trailing == latest or (
+            trailing
+            and trailing.startswith(LATEST_USER_FOCUS_MARKER)
+            and latest in trailing
+        ):
+            return [*compacted[:-1], focused]
+    return [*compacted, focused]
 
 
 def summarize_history(messages: list) -> str:
@@ -291,17 +371,22 @@ def _keep_tail(messages: list, count: int = 5) -> list:
     return messages[tail_start:]
 
 
+def _build_compacted(label: str, summary: str, messages: list) -> list:
+    tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)
+    compacted = [
+        {"role": "user", "content": f"[{label}]\n\n{summary}"},
+        *tail,
+    ]
+    return _ensure_latest_user_focus(compacted, messages)
+
+
 def compact_history(messages: list) -> list:
     from harness.project.session_store import record_compact_boundary
 
     transcript = write_transcript(messages)
     print(f"  \033[36m[compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
-    tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)
-    compacted = [
-        {"role": "user", "content": f"[Compacted]\n\n{summary}"},
-        *tail,
-    ]
+    compacted = _build_compacted("Compacted", summary, messages)
     record_compact_boundary("auto", estimate_size(messages), transcript, compacted)
     return compacted
 
@@ -312,11 +397,7 @@ def reactive_compact(messages: list) -> list:
     transcript = write_transcript(messages)
     print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
-    tail = _keep_tail(messages, count=COMPACT_TAIL_COUNT)
-    compacted = [
-        {"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
-        *tail,
-    ]
+    compacted = _build_compacted("Reactive compact", summary, messages)
     record_compact_boundary("reactive", estimate_size(messages), transcript, compacted)
     return compacted
 
