@@ -25,11 +25,20 @@ def connect_mcp(name: str) -> str:
 
     config = load_mcp_config()
     if name in config:
+        if name == "github":
+            import os
+
+            token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN", "").strip()
+            if not token:
+                return (
+                    "MCP 'github' skipped: set GITHUB_PERSONAL_ACCESS_TOKEN in .env "
+                    "(and ensure Docker is running)."
+                )
         try:
             client = create_real_client(name, config[name])
             mcp_clients[name] = client
             tool_names = [tool["name"] for tool in client.tools]
-            print(f"  \033[31m[mcp] connected (real): {name} → {tool_names}\033[0m")
+            # Success stays quiet — tools are available in the pool; avoid spam on every launch.
             return (
                 f"Connected to MCP server '{name}' (stdio). "
                 f"Discovered {len(client.tools)} tools: {', '.join(tool_names)}"
@@ -40,14 +49,13 @@ def connect_mcp(name: str) -> str:
                 f"Then retry connect_mcp('{name}')."
             )
         except Exception as exc:
-            return f"MCP connection failed: {exc}"
+            return f"MCP connection failed ({name}): {exc}"
 
     factory = MOCK_SERVERS.get(name)
     if factory:
         client = factory()
         mcp_clients[name] = client
         tool_names = [tool["name"] for tool in client.tools]
-        print(f"  \033[31m[mcp] connected (mock): {name} → {tool_names}\033[0m")
         return (
             f"Connected to mock MCP server '{name}'. "
             f"Discovered {len(client.tools)} tools: {', '.join(tool_names)}"
@@ -63,10 +71,24 @@ def connect_mcp(name: str) -> str:
 
 
 def bootstrap_mcp_servers() -> list[str]:
-    messages = []
-    for name in load_mcp_config():
-        messages.append(connect_mcp(name))
-    return messages
+    """Connect every server in mcp.json. Returns status lines (success + failures)."""
+    return [connect_mcp(name) for name in load_mcp_config()]
+
+
+def mcp_bootstrap_warnings(results: list[str]) -> list[str]:
+    """Lines worth showing at startup — failures / skips only."""
+    warnings: list[str] = []
+    for line in results:
+        text = line.strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if lower.startswith("connected"):
+            continue
+        if "already connected" in lower:
+            continue
+        warnings.append(text)
+    return warnings
 
 
 def assemble_tool_pool(

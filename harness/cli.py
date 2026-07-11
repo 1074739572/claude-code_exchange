@@ -12,7 +12,7 @@ from harness.agent.cron import consume_cron_queue
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.loop import agent_loop, agent_lock
-from harness.mcp.pool import bootstrap_mcp_servers
+from harness.mcp.pool import bootstrap_mcp_servers, mcp_bootstrap_warnings
 from harness.messages.repair import repair_tool_pairing
 from harness.models import handle_model_command
 from harness.modes import format_mode_status, set_mode
@@ -143,10 +143,8 @@ def run_cli() -> None:
             context = update_context(context, history)
 
     bootstrap_results = bootstrap_mcp_servers()
-    for line in bootstrap_results:
-        if "Connected" in line:
-            renderer.info(line.strip())
-
+    for line in mcp_bootstrap_warnings(bootstrap_results):
+        renderer.warn(line)
     threading.Thread(
         target=cron_autorun_loop, args=(history, context), daemon=True
     ).start()

@@ -133,6 +133,17 @@ python main.py
 
 提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
 
+## MCP（可选插件）
+
+`config/mcp.json` 已预置两个公用 server（启动时自动连接；成功静默，失败才告警）：
+
+| 名字 | 作用 | 本机需要 |
+|------|------|----------|
+| **fetch** | 拉网页转 markdown | `pip install -r requirements.txt`（含 `mcp-server-fetch`） |
+| **playwright** | 浏览器自动化 | 已装 **Node.js**（首次 `npx` 会拉包） |
+
+连上后工具名形如 `mcp__fetch__fetch`、`mcp__playwright__…`。某个 server 缺依赖时只会在启动日志里报失败，不影响其它能力。不想用某个时，从 `mcp.json` 删掉对应条目即可。
+
 ---
 
 ## 与上游 s20 的对照（一眼）

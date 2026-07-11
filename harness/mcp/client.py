@@ -39,10 +39,12 @@ class RealMCPClient:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
+    from harness.mcp.config import resolve_server_env
+
     params = StdioServerParameters(
       command=self.server_cfg["command"],
       args=self.server_cfg.get("args", []),
-      env=self.server_cfg.get("env"),
+      env=resolve_server_env(self.server_cfg),
     )
     self._stdio_cm = stdio_client(params)
     read, write = await self._stdio_cm.__aenter__()
