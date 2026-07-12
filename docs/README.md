@@ -13,6 +13,7 @@
 | 模块怎么拆、数据落哪 | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 | 问题编号与关联关系 | [bugs/README.md](./bugs/README.md) |
 | 本地能力回归怎么评 | [evals.md](./evals.md) |
+| 本地 RAG 仿写怎么接 | [rag.md](./rag.md) |
 | 2026-07-07 大改总览 | [CHANGELOG-2026-07-07.md](./CHANGELOG-2026-07-07.md) |
 | 2026-07-12 会话 / lookup / 评测 | [CHANGELOG-2026-07-12.md](./CHANGELOG-2026-07-12.md) |
 

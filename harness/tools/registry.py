@@ -383,7 +383,8 @@ BUILTIN_TOOLS = [
         "name": "rag_index",
         "description": (
             "Index local reference documents for RAG (.md/.txt/.docx). "
-            "Default corpus: files/样例. Parses, chunks, and builds a local vector index."
+            "Default path empty = files/样例; use path=\"files\" for the full corpus. "
+            "Builds a BM25 lexical index under .rag/."
         ),
         "input_schema": {
             "type": "object",
@@ -399,8 +400,9 @@ BUILTIN_TOOLS = [
     {
         "name": "rag_search",
         "description": (
-            "Semantic search over indexed reference documents. "
-            "Use before writing thesis/report sections to retrieve style and structure examples."
+            "BM25 keyword search over indexed local reference documents. "
+            "Use before writing thesis/report sections to retrieve style and structure. "
+            "Requires rag_index first."
         ),
         "input_schema": {
             "type": "object",

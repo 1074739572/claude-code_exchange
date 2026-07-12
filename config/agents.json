@@ -10,8 +10,10 @@
     "write": {
       "model_id": "qwen-max",
       "label": "Writing worker (Qwen)",
-      "tools": ["read_file", "write_file", "glob"],
-      "system": "You write and revise Chinese prose, reports, and documentation under output/. Complete the assignment, then return a concise summary. Do not spawn subagents."
+      "tools": ["read_file", "write_file", "glob", "rag_search", "rag_status"],
+      "system": "You write and revise Chinese prose, reports, and documentation under output/. "
+      "Use rag_search on indexed files/ before drafting each section. "
+      "Complete the assignment, then return a concise summary. Do not spawn subagents."
     },
     "explore": {
       "model_id": "deepseek-v4-flash",

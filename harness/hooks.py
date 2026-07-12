@@ -82,14 +82,19 @@ def large_output_hook(block, output):
 
 def user_prompt_hook(query: str):
     from harness.ui.tool_display import hooks_verbose
-    from harness.prompts.lookup import augment_query, is_lookup_query
+    from harness.prompts.lookup import augment_query as augment_lookup
+    from harness.prompts.lookup import is_lookup_query
+    from harness.prompts.writing import augment_query as augment_writing
+    from harness.prompts.writing import is_writing_query
 
-    # Inject lookup-mode constraint before the model sees the message.
-    # Returns the augmented string so cli.py can send it to the agent while
-    # still showing the user's original wording on screen.
     if is_lookup_query(query):
-        augmented = augment_query(query)
+        augmented = augment_lookup(query)
         print("\033[36m[lookup mode] 已自动追加收口约束（查找题：先答有无，别爬整站）\033[0m")
+        return augmented
+
+    if is_writing_query(query):
+        augmented = augment_writing(query)
+        print("\033[35m[writing mode] 已启用本地 RAG 仿写流程（files/ → rag_search → output/）\033[0m")
         return augmented
 
     if not hooks_verbose():

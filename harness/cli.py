@@ -282,6 +282,8 @@ def run_cli() -> None:
         from harness.project.session_registry import touch_session_title_from_query
 
         from harness.prompts.lookup import is_lookup_query
+        from harness.prompts.writing import is_writing_query
+        from harness.rag.bootstrap import bootstrap_message, ensure_rag_indexed
 
         touch_session_title_from_query(query)
         repair_tool_pairing(history)
@@ -290,6 +292,15 @@ def run_cli() -> None:
         history.append({"role": "user", "content": model_query})
         context["latest_user_query"] = query
         context["lookup_mode"] = is_lookup_query(query)
+        context["writing_mode"] = is_writing_query(query) and not context["lookup_mode"]
+        context.pop("rag_bootstrap", None)
+        if context["writing_mode"]:
+            boot = ensure_rag_indexed("files")
+            context["rag_bootstrap"] = bootstrap_message(boot)
+            if boot.get("ok"):
+                renderer.muted(context["rag_bootstrap"].split("\n")[0])
+            else:
+                renderer.warn(context["rag_bootstrap"][:200])
 
         listener = InterruptListener()
         interrupted = False

@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
+import os
+
 from harness.rag.ingest import ingest_path
 from harness.rag.lexical import index_chunks, rag_status_dict, search_chunks
+
+
+def _hit_char_limit() -> int:
+    raw = os.getenv("HARNESS_RAG_HIT_CHARS", "1500").strip()
+    try:
+        return max(400, int(raw))
+    except ValueError:
+        return 1500
+
+
+def _truncate_hit_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 20] + "\n…[truncated]"
 
 
 def run_rag_index(path: str = "") -> str:
@@ -41,6 +57,7 @@ def run_rag_search(
         )
         if not hits:
             return "No matching chunks found."
+        hit_limit = _hit_char_limit()
         lines = [
             "【格式/内容参考】请学结构和表述方式，不要照抄原文。",
             "",
@@ -51,7 +68,7 @@ def run_rag_search(
                 f"[{index}] {hit.get('source')} › {hit.get('heading_path')}{caption} "
                 f"(score={hit.get('score')})"
             )
-            lines.append(hit["text"])
+            lines.append(_truncate_hit_text(hit["text"], hit_limit))
             lines.append("")
         return "\n".join(lines).strip()
     except Exception as exc:

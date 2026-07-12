@@ -20,6 +20,7 @@ class RecoveryState:
         self.consecutive_529 = 0
         self.has_attempted_reactive_compact = False
         self.fallback_model: str | None = None
+        self.has_nudged_empty_reply = False
 
 
 def retry_delay(attempt: int) -> float:

@@ -25,3 +25,19 @@ def is_tool_use(block) -> bool:
 
 def is_text(block) -> bool:
     return block_type(block) == "text"
+
+
+def has_displayable_text(content) -> bool:
+    """True when assistant content includes a non-empty user-facing text block."""
+    if isinstance(content, str):
+        return bool(content.strip())
+    if not isinstance(content, list):
+        return bool(str(content).strip())
+    for block in content:
+        if isinstance(block, dict):
+            if block.get("type") == "text" and str(block.get("text", "")).strip():
+                return True
+            continue
+        if getattr(block, "type", None) == "text" and str(getattr(block, "text", "") or "").strip():
+            return True
+    return False

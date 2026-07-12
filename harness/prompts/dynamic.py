@@ -104,4 +104,14 @@ def build_session_context(
             "Python package path is `harness/` (there is no `src/harness/`)."
         )
 
+    rag_boot = (context.get("rag_bootstrap") or "").strip()
+    if rag_boot:
+        sections.append(rag_boot)
+
+    if context.get("writing_mode"):
+        sections.append(
+            "Writing mode active: use rag_search on indexed files/ before "
+            "write_file to output/*.md; do not read_file whole reference docx."
+        )
+
     return "\n\n".join(sections)

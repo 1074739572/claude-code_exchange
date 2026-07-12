@@ -20,10 +20,11 @@ from harness.agent.recovery import (
 )
 from harness.agent.repeat_guard import RepeatGuard
 from harness.agent.lookup_guard import LookupGuard
+from harness.agent.writing_guard import WritingGuard
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
-from harness.messages.blocks import block_field, block_text, is_text, is_tool_use
+from harness.messages.blocks import block_field, block_text, has_displayable_text, is_text, is_tool_use
 from harness.messages.repair import finalize_cancelled_tool_round, repair_tool_pairing
 from harness.models import get_model
 from harness.project.session import serialize_messages
@@ -83,6 +84,7 @@ def agent_loop(
     llm_rounds = 0
     repeat_guard = RepeatGuard()
     lookup_guard = LookupGuard(active=bool(context.get("lookup_mode")))
+    writing_guard = WritingGuard(active=bool(context.get("writing_mode")))
 
     while True:
         if is_cancelled():
@@ -158,6 +160,25 @@ def agent_loop(
         state.has_escalated = False
         _append_assistant(messages, response.content)
         if not has_tool_use(response.content):
+            if (
+                not has_displayable_text(response.content)
+                and not state.has_nudged_empty_reply
+            ):
+                state.has_nudged_empty_reply = True
+                renderer.warn(
+                    "模型本轮没有可见文字回复（可能只有内部推理），正在请求文字总结…"
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[Harness] Your last assistant turn had no user-visible "
+                            "text reply. Answer the user's latest question now in "
+                            "plain text. Do not call any tools."
+                        ),
+                    }
+                )
+                continue
             trigger_hooks("Stop", messages)
             return False
 
@@ -244,6 +265,30 @@ def agent_loop(
                 )
                 continue
 
+            write_block, write_msg = writing_guard.check_write(
+                name, tool_input if isinstance(tool_input, dict) else None
+            )
+            if write_block:
+                renderer.tool_repeat(
+                    name,
+                    tool_input if isinstance(tool_input, dict) else None,
+                    streak=1,
+                    blocked=True,
+                )
+                renderer.tool_result(
+                    write_msg,
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block_field(block, "id", ""),
+                        "content": write_msg,
+                    }
+                )
+                continue
+
             blocked = trigger_hooks("PreToolUse", block)
             if blocked:
                 renderer.tool_result(
@@ -286,6 +331,7 @@ def agent_loop(
             lookup_guard.note_result(
                 name, tool_input if isinstance(tool_input, dict) else None, str(output)
             )
+            writing_guard.note_tool(name)
             trigger_hooks("PostToolUse", block, output)
             renderer.tool_result(
                 str(output),

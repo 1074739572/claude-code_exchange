@@ -47,7 +47,7 @@ cd learn-claude-code
 |------|------|------|
 | Resume OpenCode 模式 | 默认全新会话；`/clear` 一次清干净；`/resume N` 切换会话；续项目需 `/resume project` | [003](docs/bugs/003-resume-opt-in.md) |
 | Todo 持久化与提醒 | `sessions/<id>/todos.json`（跟会话）；每轮注入；reminder | [001](docs/bugs/001-todo-drift.md) · [003](docs/bugs/003-resume-opt-in.md) |
-| 工具空转护栏 | RepeatGuard；工具 UI 摘要；Lookup mode（查找题自动收口） | [005](docs/bugs/005-tool-loop-drift.md) |
+| 工具空转护栏 | RepeatGuard；LookupGuard；WritingGuard + 本地 RAG 仿写 | [005](docs/bugs/005-tool-loop-drift.md) · [rag](docs/rag.md) |
 | 中断与回滚 | Esc / SIGINT 停当前轮；orphan `tool_use` 修复，避免 API 400 | [001](docs/bugs/001-todo-drift.md) |
 | Prompt 缓存分层 | static / dynamic / ephemeral 分离，提高 cache hit | [002](docs/bugs/002-prompt-cache-vs-dynamic-context.md) |
 | 上下文压缩 Phase 1 | compact 保留尾部；结构化摘要；micro_compact 落盘可恢复；时间默认分钟粒度 | [004](docs/bugs/004-context-compaction.md) |

@@ -57,7 +57,13 @@ def load_skill(name: str) -> str:
     if not skill:
         available = ", ".join(SKILL_REGISTRY.keys()) or "(none)"
         return f"Skill not found: {name}. Available: {available}"
-    return skill["content"]
+    content = skill["content"]
+    if name == "thesis-writing":
+        from harness.rag.bootstrap import bootstrap_message, ensure_rag_indexed
+
+        boot = ensure_rag_indexed("files")
+        content = content + "\n\n" + bootstrap_message(boot)
+    return content
 
 
 scan_skills()

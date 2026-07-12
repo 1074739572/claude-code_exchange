@@ -48,8 +48,20 @@
 | micro_compact 防 persisted 嵌套 | `harness/agent/compact/persist.py` · `layers.py` |
 | MCP / dispatch 超时温和返回 | `harness/mcp/client.py` · `tools/dispatch.py` |
 | Lookup mode 自动约束 | `harness/prompts/lookup.py` · `hooks.py` · `cli.py` |
+| 空回复 nudge（thinking-only → 强制 text） | `harness/messages/blocks.py` · `loop.py` |
 
-证据会话见 [005-tool-loop-drift.md](./bugs/005-tool-loop-drift.md)（含 2026-07-12 失败不换口 / compact 套娃）。
+### 3b. 本地 RAG 仿写串联
+
+| 项 | 位置 |
+|----|------|
+| writing_mode 检测 + 约束 | `harness/prompts/writing.py` · `hooks.py` |
+| 自动 `rag_index`（files/） | `harness/rag/bootstrap.py` · `cli.py` |
+| WritingGuard（写 output 前须 rag_search） | `harness/agent/writing_guard.py` · `loop.py` |
+| 检索结果截断 | `harness/rag/tools.py`（`HARNESS_RAG_HIT_CHARS`） |
+| write 子 agent 加 rag_search | `config/agents.json` |
+| 文档 | [rag.md](./rag.md) · `evals/rag/fixtures/tiny_corpus/` |
+
+证据会话见 [005-tool-loop-drift.md](./bugs/005-tool-loop-drift.md)。
 
 ### 4. 评测套件
 
