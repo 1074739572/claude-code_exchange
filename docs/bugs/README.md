@@ -15,7 +15,7 @@
 | [002](./002-prompt-cache-vs-dynamic-context.md) | Prompt 缓存命中 | 分层已落地 | static / ephemeral 拆开，命中从 ~0% 拉起来 |
 | [003](./003-resume-opt-in.md) | Resume OpenCode 模式 | 已实施 | 默认全新；续项目要 `/resume project` |
 | [004](./004-context-compaction.md) | 上下文压缩丢信息 | Phase 1 + 最新 user 优先 | compact 留 tail + 结构化摘要 + tool 落盘；摘要不压过本条用户话 |
-| [005](./005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解 | 同 URL 死循环 fetch；意图展示≠重写工具调用 |
+| [005](./005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解 | 同 URL 死循环 fetch；**已找到仍续爬**（Pu Keyang 案例 ≈65–89 万 token 才收口）；Lookup mode 自动约束 |
 
 相关能力（非 bug 单）：本地 `/usage` 用量统计（`.project/usage/`，提示符显模型）；SWE-bench Lite 评测（`python -m evals.swebench`）。
 
@@ -38,7 +38,7 @@
 | compact 后跑偏、忘路径 | **001-B / 004** | **有**（模板 + tail + persist + 最新 user 置顶） |
 | todo 表和进度不一致 | **001-A** | 几乎无（靠 todos.json + 注入） |
 | Ctrl+C 后 400 | **001-C** | 无关（靠 repair / undo） |
-| 同一 fetch 刷屏、搜着搜着偏题 | **005** | 间接（大结果易触发 compact；主因是循环与收口） |
+| 同一 fetch 刷屏、搜着搜着偏题；**找到答案仍不停** | **005** | 间接（大结果易触发 compact；主因是循环与收口） |
 
 防偏移和省缓存**不是二选一**：动态内容放 ephemeral（002），模型仍看得见 todos（001）。
 
@@ -48,14 +48,14 @@
 
 | 主题 | 做了什么 | 文档 |
 |------|----------|------|
-| Todo 真相 | 每轮注入全表、3 轮 reminder、Rich Tasks、磁盘持久化 | 001-A |
+| Todo 真相 | 每轮注入全表、3 轮 reminder、Rich Tasks、**`sessions/<id>/todos.json`** | 001-A · 003 |
 | 本条用户意图 | `latest_user_query` 进 ephemeral | 001-B |
 | 打断 / orphan tool | repair + abort 回滚 | 001-C |
 | 缓存分层 | static / dynamic / ephemeral + `if_unchanged` | 002 |
 | 默认全新会话 | `/clear` 全清；resume opt-in | 003 |
 | 压缩保真 | compact 留 5 条 tail；六段摘要；micro 落盘；时间分钟级；**最新 user 覆盖摘要旧目标**；`agent/compact/` 模块化 | 004 |
 | 用量可见 | `/usage` 日/周/月/年；提示符 `[model]` | （功能） |
-| 工具空转 | RepeatGuard；工具 UI 摘要；调工具前展示同轮 text 意图 | 005 |
+| 工具空转 | RepeatGuard；工具 UI 摘要；调工具前展示同轮 text 意图；**Lookup mode**（查找题自动追加收口约束） | 005 |
 
 ---
 
@@ -71,7 +71,7 @@
 | **④ 多 agent 隔离** | 同 cwd 共享 `.project/` | worktree 约定或 `HARNESS_PROJECT_DIR` | 003 |
 | **⑤ memory 写回** | 用户纠正不进 `.memory/` | compact/纠正时 append constraints | 004 |
 | **⑥ 缓存再抠** | 长任务真实命中仍波动 | slim ephemeral；少频繁换模型 | 002 |
-| **⑦ 工具空转收口** | 同 URL 死循环、搜完不答 | 默认 max_rounds；失败黑名单；收口提醒 | 005 |
+| **⑦ 工具空转收口** | 同 URL 死循环、搜完不答、**找到仍续爬** | lookup 任务完成判定；失败黑名单；收口提醒（非全局小 max_rounds） | 005 |
 
 **① 已落地。** ⑤/⑦ 与长检索体感强相关时可优先。
 

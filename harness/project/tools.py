@@ -102,24 +102,28 @@ def run_project_clear(*, clear_project: bool = True) -> str:
     from harness.project.state import STATE_PATH
     from harness.todos.state import clear_todos
 
-    clear_todos()
+    clear_todos(delete_file=False)
     archived = clear_session(archive=True)
     parts = []
     if archived:
-        parts.append(f"已清空会话 → 已归档至 {archived}")
+        parts.append(f"已结束会话（目录保留，含其 todos）：{archived}")
     else:
-        parts.append("已清空会话（此前无 session.jsonl）。")
+        parts.append("已开启新会话（此前无 active session）。")
 
     if clear_project:
         if STATE_PATH.exists():
             STATE_PATH.unlink()
-            parts.append("已删除 .project/state.json（论文章节表）。")
+            parts.append("已删除 .project/state.json（论文/长任务章节表，单槽）。")
         else:
             parts.append("未找到 .project/state.json，无需删除。")
-        parts.append("已全新起步（OpenCode 模式）。要续论文：/resume project 重新 init。")
+        parts.append(
+            "已全新起步（OpenCode）。"
+            "todos 跟新 session；续论文：/resume project 或 project_init。"
+        )
     else:
         parts.append(
             "论文章节表已保留（.project/state.json）——这是 /clear session 轻量版。"
+            "当前会话已换新 id，旧 session 的 todos 仍在其目录下。"
         )
     return "\n".join(parts)
 

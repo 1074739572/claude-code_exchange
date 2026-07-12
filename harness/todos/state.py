@@ -1,18 +1,45 @@
-"""In-memory session todos with optional persistence to .project/todos.json."""
+"""In-memory session todos persisted under the active session directory.
+
+Path::
+
+    .project/sessions/<id>/todos.json
+
+Legacy ``.project/todos.json`` is migrated by ``session_registry`` into a
+session folder; this module never writes the flat path again.
+"""
 
 from __future__ import annotations
 
 import ast
 import json
 import re
+from pathlib import Path
 from typing import Any
-
-from harness.settings import PROJECT_DIR
-
-TODOS_PATH = PROJECT_DIR / "todos.json"
 
 _CURRENT: list[dict[str, str]] = []
 rounds_since_todo_update: int = 0
+
+
+def todos_path() -> Path:
+    """Return todos.json for the active session (creates session dir if needed)."""
+    from harness.project.session_registry import (
+        ensure_active_session,
+        read_active_session_id,
+        session_paths,
+    )
+
+    if not read_active_session_id():
+        ensure_active_session(fresh=False)
+    return session_paths().todos_json
+
+
+# Back-compat: ``from harness.todos.state import TODOS_PATH`` resolves via __getattr__.
+
+
+def __getattr__(name: str):
+    if name == "TODOS_PATH":
+        return todos_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_todos() -> list[dict[str, str]]:
@@ -27,7 +54,11 @@ def _derive_active_form(content: str, status: str) -> str:
         words = text.split()
         if words:
             first = words[0]
-            if re.match(r"^(run|fix|add|update|write|read|test|check|implement|create|refactor)\b", first, re.I):
+            if re.match(
+                r"^(run|fix|add|update|write|read|test|check|implement|create|refactor)\b",
+                first,
+                re.I,
+            ):
                 return f"{first[0].upper()}{first[1:]}…" if len(first) > 1 else f"{first}…"
         return f"{text}…"
     return text
@@ -96,21 +127,37 @@ def write_todos(raw: Any) -> tuple[list[dict[str, str]] | None, str | None]:
     return todos, None
 
 
-def clear_todos() -> None:
+def clear_todos(*, delete_file: bool = True) -> None:
+    """Clear in-memory todos; optionally delete the active session's todos.json.
+
+    When ending a session (``/clear``), pass ``delete_file=False`` so the old
+    ``sessions/<id>/todos.json`` remains with that archived conversation.
+    """
     global _CURRENT, rounds_since_todo_update
     _CURRENT = []
     rounds_since_todo_update = 0
-    if TODOS_PATH.exists():
-        TODOS_PATH.unlink()
+    if not delete_file:
+        return
+    try:
+        path = todos_path()
+    except Exception:
+        return
+    if path.exists():
+        path.unlink()
 
 
 def load_todos_from_disk() -> list[dict[str, str]]:
     global _CURRENT
-    if not TODOS_PATH.exists():
+    try:
+        path = todos_path()
+    except Exception:
+        _CURRENT = []
+        return []
+    if not path.exists():
         _CURRENT = []
         return []
     try:
-        raw = json.loads(TODOS_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         _CURRENT = []
         return []
@@ -128,12 +175,13 @@ def note_llm_round_without_todo_update() -> None:
 
 
 def _persist() -> None:
+    path = todos_path()
     if not _CURRENT:
-        if TODOS_PATH.exists():
-            TODOS_PATH.unlink()
+        if path.exists():
+            path.unlink()
         return
-    PROJECT_DIR.mkdir(parents=True, exist_ok=True)
-    TODOS_PATH.write_text(
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         json.dumps(_CURRENT, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

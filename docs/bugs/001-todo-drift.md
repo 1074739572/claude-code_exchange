@@ -52,7 +52,8 @@
 
 ### 已实施改进（v1）
 
-整条链路：`harness/todos/` → tool 返回全表 → ephemeral/session 注入 → reminder 带全表 → Rich **Tasks** 面板 → `.project/todos.json` 持久化。
+整条链路：`harness/todos/` → tool 返回全表 → ephemeral/session 注入 → reminder 带全表 → Rich **Tasks** 面板 → **`sessions/<id>/todos.json`**（跟会话，不再用扁平 `.project/todos.json`）。
+
 
 | 维度 | 修复后 |
 |------|--------|
@@ -257,8 +258,8 @@ harness/project/session_undo.py # C：回滚
 harness/cli.py                  # B/C：focus、repair、/model 路由
 harness/ui/interrupt_listener.py
 skills/thesis-writing/SKILL.md
-.project/todos.json
-.project/state.json             # 论文章节（与 todo 双轨）
+.project/sessions/<id>/todos.json   # 会话级 todos（A）
+.project/state.json                 # 论文章节（B，与 todo 双轨）
 ```
 
 ---

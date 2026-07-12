@@ -1,9 +1,9 @@
 # 005 — 工具空转与目标漂移（检索死循环 · 意图展示）
 
-**状态：** 部分缓解（RepeatGuard + 工具 UI 摘要 + 调工具前展示模型 text）  
+**状态：** 部分缓解（RepeatGuard + 工具 UI 摘要 + 调工具前展示模型 text + **Lookup mode 自动约束**）  
 **影响：** 长检索 / MCP fetch / 任何「手段取代目的」的多轮工具任务  
 **关联：** [001 偏移 B](./001-todo-drift.md) · [004 压缩](./004-context-compaction.md)  
-**证据会话：** `.project/session.jsonl`（约 2026-07-11，查「南信大 Puke Yang / ICML」）
+**证据会话：** `.project/session_1783772951.jsonl`、`.project/session.jsonl`（2026-07-11，查「南信大 Pu Keyang / ICML 2026」）
 
 ---
 
@@ -45,6 +45,65 @@
 | `tool_result` → 模型 | 模型 | 同一页内容反复进上下文 → **真的在空转** |
 
 所以问题是 **agent 行为循环 + 目标漂移**，不是渲染 bug。
+
+---
+
+## 案例：已找到论文仍不停（Pu Keyang · ICML 2026）
+
+比「找不到死磕」更冤的一种：**答案已经有了，子目标没停，继续烧 token。**
+
+### 用户原话
+
+```text
+查找一下 pu keyang 南京信息工程大学 icml2026 的论文
+```
+
+（`session_1783772951.jsonl` 第 43 行）
+
+### 找到时刻（第 121–123 行）
+
+```text
+**Found "Keyang Pu"** at line 15956! Let me get the full paper entry context.
+…
+Found the paper! Let me get more details - the OpenReview link and full HTML context.
+```
+
+**已定位论文：**
+
+| 字段 | 内容 |
+|------|------|
+| 标题 | When Generalized Zero-Shot Learning Meets PU Learning: A Plug-and-Play Framework for Seen-Class Bias Mitigation |
+| 作者 | Long Tang, Keyang Pu, Yingjie Tian |
+| 会议 | ICML 2026 · Poster Session 6 · board **#3805** |
+
+此时用户要的「有没有 / 哪篇」**已可回答**；agent 却把子目标抬成主目标（OpenReview 链接、poster PDF、南信大 affiliation、在 Schedule 大页里再确认 #3805），**找到后仍继续 fetch 同一 Schedule 页**，用户三次抱怨「又陷入无限循环」才停。
+
+### 从发问到「找到」花了多少（用量对齐估算）
+
+数据来源：`.project/session_1783772951.jsonl` 行号 + `.project/usage/2026-07-11.jsonl` 19:xx 时段（按 LLM 轮次对齐，非逐条时间戳一一对应）。
+
+| 阶段 | LLM 轮次 | 工具调用 | 输入 token（估） | 输出 token（估） |
+|------|----------|----------|------------------|------------------|
+| 用户发问 → 说出 Found the paper | **30** | **45**（fetch **36**） | **≈ 65.6 万**（发问后 30 轮） / **≈ 88.9 万**（含发问前预热 47 轮） | **≈ 1.4 万** / **≈ 1.7 万** |
+| **找到之后**（抠 affiliation / #3805 / OpenReview） | +42+ | Schedule 连刷 | **额外 ≈ 275 万 input**（19:xx 第 48–201 次） | **≈ 6.3 万** |
+| 当日全量（含爬题等其它任务） | 436 次调用 | — | **≈ 760 万 input** | **≈ 17 万** |
+
+同段会话内大页特征：到「找到」前已有 **4 次** Schedule `tool_result` 各约 **10 万字符**；`tool_result` 新内容合计约 **66 万字符**（每次 API 仍带全历史，计费远高于「新文本」本身）。
+
+### 对照：摘要检索应怎样收口
+
+| 你的 agent（找到时） | 合理 lookup 行为 |
+|---------------------|------------------|
+| 30 轮 + 36 次 fetch，≈65–89 万 input 才说出 Found | 几次搜索摘要 → 报标题/作者/链接 |
+| 找到后不停，再烧 ≈275 万 input | 标题出来即回答用户，缺 affiliation 可一句带过 |
+| 用户三次说「又循环了」 | 预算到或「有/没有」达成即停工具 |
+
+### 根因（本案例特有）
+
+1. **无「任务完成」判定** — 模型不认为「标题 + 作者」= 可交付，非要 HTML 里抠齐链接/单位。  
+2. **`更多内容可用` 诱发续爬** — Schedule 截断暗示「下一页还有」，模型把「再 fetch 一次」当未完成任务。  
+3. **compact 摘要固化子目标** — 摘要写「paper was found, however OpenReview/affiliation still being extracted」，下一轮继续搜 Schedule 而非先答用户。  
+4. **Lookup 约束当时未上线** — 2026-07-11 当晚会话跑在改代码之前；`[Lookup mode]` 自动追加尚未生效。
 
 ---
 
@@ -119,6 +178,7 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 | **重复调用折叠展示** | `↻ ×N` / `⊘ blocked` | `renderer.tool_repeat` |
 | **调工具前展示意图** | 同轮 `text` → `› …`；最终纯文本回答仍在回合结束打印 | `loop.py` · `renderer.tool_intent` · `cli.print_turn_assistants` |
 | **Prompt 轻推** | identity：调工具前一句短意图（可再弱化/删除） | `harness/prompts/sections.py` |
+| **Lookup mode 自动约束** | 检测查找/可行性问句 → 原话保留、追加收口约束（成功标准 / 禁爬整站 / 预算 ≤6 次联网）；屏幕提示 `[lookup mode]` | `harness/prompts/lookup.py` · `harness/hooks.py` · `harness/cli.py` · `tests/test_lookup_mode.py` |
 
 ---
 
@@ -128,7 +188,8 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 |------|------|----------|
 | **主循环默认 max_rounds** | 空转可无限 | 如 25 轮到期强制总结并停工具 |
 | **失败 URL / robots 黑名单** | 挡了还撞墙 | 同 URL/同错误类限次 |
-| **收口提醒** | 搜了很久仍不答用户 | 每 K 轮对照最新用户话：能答则停搜 |
+| **收口提醒** | 搜了很久仍不答用户；**已找到仍续爬** | 每 K 轮对照最新用户话：能答则停搜；标题/条目出现即强制总结 |
+| **任务完成判定** | 「找到论文」不停 | lookup 成功标准写死：有标题即交付，affiliation 可选 |
 | **fetch 结果强制落盘+短预览** | 大 HTML 喂进对话 | MCP/fetch 路径走 persist 阈值 |
 | **检索走 explore task** | 主 agent 自己吞网 | 子 agent 只回条目列表 |
 | **弱化/去掉意图 prompt** | 与 Act 风格打架 | 只保留「有 text 就显示」 |
@@ -142,12 +203,15 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 - `harness/ui/tool_display.py` · `harness/ui/renderer.py`
 - `harness/cli.py`（`print_turn_assistants` 跳过已现场展示的 tool-round text）
 - `harness/prompts/sections.py`
+- `harness/prompts/lookup.py`
+- `tests/test_lookup_mode.py`
 - `tests/test_repeat_guard.py`
-- 运行时：`.project/session.jsonl` · `.transcripts/transcript_*.jsonl`
+- 运行时：`.project/session.jsonl` · `.project/session_*.jsonl` · `.project/usage/` · `.transcripts/transcript_*.jsonl`
 
 ---
 
 ## 一句话
 
 **长检索空转 = 重复工具调用 + 目标被手段绑架 + 大结果引发反复 compact；终端复读是症状。**  
+**已找到仍不停**（Pu Keyang 案例）= 缺任务完成判定 + 子目标（链接/单位）压过用户要的「有/没有」。  
 展示「为什么调工具」= 把同轮已有 `text` 给人看，**不是**让模型重写工具调用协议。

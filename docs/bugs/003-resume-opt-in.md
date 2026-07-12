@@ -59,9 +59,14 @@ HARNESS_WELCOME_PROJECT=1      # Welcome 显示章节行
 
 | 文件 | 改动 |
 |------|------|
+| `harness/project/session_registry.py` | `sessions/<id>/`、active 指针、legacy 迁移、会话列表 |
+| `harness/project/session_store.py` | 读写落到 session 目录；`bootstrap` 默认新 session；`clear` 换 id 保留旧目录 |
+| `harness/todos/state.py` | `todos.json` → `sessions/<id>/todos.json` |
+| `harness/project/tools.py` | `/clear` 文案与「保留旧 session todos」 |
+| `harness/project/resume.py` | 区分 session 列表 vs `state.json` 长任务 |
 | `harness/project/session_store.py` | `continue_session_on_startup()`、`bootstrap_from_transcript_enabled()`；`bootstrap_session` 默认返回 `[]`；`format_session_line` 区分模式 |
 | `harness/project/tools.py` | `run_project_clear(clear_project=True)` 默认全清；`/clear session` 反向开关 |
-| `harness/cli.py` | `/clear` 解析改为 `sub in ("session","chat","history")` 才保留项目 |
+| `harness/cli.py` | `/clear` 解析；首条用户话写入 session title |
 | `harness/prompts/sections.py` | 删 thesis 一句，改为通用「opt-in via load_skill」 |
 | `harness/project/resume.py` | `format_resume_status` 文案改 OpenCode；新增 `_continue_flag()` |
 
@@ -91,13 +96,33 @@ python main.py
 
 ---
 
-## 多子 agent / 队友协作
+## 存储分层（2026-07 起：todos 跟 session）
+
+```text
+.project/
+  active_session.json              # 当前会话 id
+  sessions/<id>/
+    session.jsonl                  # 对话
+    session.meta.json              # 标题 / 时间 / 持久化游标
+    todos.json                     # A：本会话任务（1 session ↔ 1 todos）
+  state.json                       # B：长任务档案（论文章节），单槽，opt-in
+  usage/                           # 用量（跨 clear 保留）
+```
+
+| 层 | 文件 | `/clear` | 换 session |
+|----|------|----------|------------|
+| 对话 + todos (A) | `sessions/<id>/` | 结束当前 id，**目录保留**（含 todos） | 新 id 空 todos；旧 todos 不跟过来 |
+| 长任务 (B) | `state.json` | 默认删除；`/clear session` 保留 | **不动**；`project_init` 会整份覆盖 |
+
+`/resume`：列会话目录 + 当前 todos；`/resume project`：只注入 B，不改 A。  
+旧版扁平 `.project/session.jsonl` / `todos.json` 启动时迁移进 `sessions/<id>/`。
+
 
 | 系统 | 谁看得见 | 子 agent 是否共享 |
 |------|----------|-------------------|
-| `todo_write`（session todos） | 主 agent 动态 prompt | ❌ `task` 子 agent 隔离，无 todo_write 工具 |
+| `todo_write`（session todos） | 主 agent 动态 prompt | ❌ `task` 子 agent 隔离，无 todo_write 工具；todos 在 `sessions/<id>/todos.json` |
 | `.tasks/` 板 | Lead + teammate | ✅ 队友协作共享，靠磁盘 + claim_task |
-| `state.json` 论文章节 | `project_*` / `/resume project` | ❌ 子 agent 默认不看，除非 prompt 里写 |
+| `state.json` 论文章节 | `project_*` / `/resume project` | ❌ 子 agent 默认不看；与 session **分开**，单槽 |
 
 子 agent（`harness/agents/runner.py`）从 `[{user: prompt}]` 起跑，看不到父 session 或 todos。  
 队友（`spawn_teammate`）共享 `.tasks/`，不是 todos.json。  

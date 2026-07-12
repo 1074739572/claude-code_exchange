@@ -60,9 +60,13 @@ def _help_text() -> str:
                            local token stats + hit rate (bars; kept across /clear)
   /undo                    cancel last completed question + reply
   Esc / Ctrl+C             stop in-flight turn; roll back to edit/resend question
-  /resume [session|project]  session status; project = opt-in thesis context
-  /project                   thesis chapter table (same as /resume project view)
-  /clear [session]         OpenCode 模式：默认清 session+todos+state.json；/clear session 仅清对话
+  /resume                   list sessions (name · created)
+  /resume <N>               switch to session N (e.g. /resume 2)
+  /resume delete <N>        delete session N from list
+  /resume delete project    delete long-task state.json
+  /resume project           inject thesis state.json (long workflow)
+  /clear [session]          end session (keep dir); default also deletes state.json
+  /clear session            new session id; keep state.json
   /import-transcript [path] [full|merge]
   /transcripts             list .transcripts backups
   /banner [style|demo]     preview welcome art (classic|emoji|typewriter|shadow3d)
@@ -205,8 +209,10 @@ def run_cli() -> None:
             parts = query.strip().split(maxsplit=1)
             sub = parts[1] if len(parts) > 1 else ""
             with agent_lock:
-                renderer.plain(run_resume_command(sub, messages=history))
+                note = run_resume_command(sub, messages=history)
+                repair_tool_pairing(history)
                 context = update_context(context, history)
+                renderer.plain(note)
             print()
             continue
         if _match_cli_command(query, "/clear"):
@@ -268,11 +274,18 @@ def run_cli() -> None:
             context = update_context(context, history)
             print()
             continue
-        trigger_hooks("UserPromptSubmit", query)
+        hook_result = trigger_hooks("UserPromptSubmit", query)
+        # user_prompt_hook may return an augmented query (e.g. lookup-mode
+        # constraint appended). Show the user's original wording on screen,
+        # but send the augmented version to the model.
+        model_query = hook_result if isinstance(hook_result, str) else query
+        from harness.project.session_registry import touch_session_title_from_query
+
+        touch_session_title_from_query(query)
         repair_tool_pairing(history)
         renderer.user(query)
         turn_start = len(history)
-        history.append({"role": "user", "content": query})
+        history.append({"role": "user", "content": model_query})
         context["latest_user_query"] = query
 
         listener = InterruptListener()
