@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from harness.rag.ingest import ingest_path
-from harness.rag.lexical import index_chunks, rag_status_dict, search_chunks
+from harness.rag.pipeline import build_index, rag_status_dict, search
 
 
 def _hit_char_limit() -> int:
@@ -25,15 +25,21 @@ def _truncate_hit_text(text: str, limit: int) -> str:
 def run_rag_index(path: str = "") -> str:
     try:
         result = ingest_path(path or None)
-        index_result = index_chunks([item["source"] for item in result["files"]])
+        index_result = build_index([item["source"] for item in result["files"]])
         lines = [
             f"Indexed corpus: {result['root']}",
             f"Files: {len(result['files'])}, chunks: {result['total_chunks']}, "
-            f"vectors: {index_result['indexed_chunks']}",
+            f"vectors: {index_result['vector_count']} "
+            f"(parents: {index_result.get('parent_chunks', 0)}, "
+            f"children: {index_result['indexed_chunks']})",
+            f"Retrieval: {index_result['retrieval_mode']} "
+            f"({index_result['embedding_backend']}: {index_result['embedding_model']})",
         ]
         for item in result["files"]:
             lines.append(
-                f"  - {item['source']}: {item['chunks']} chunks, {item['chars']} chars"
+                f"  - {item['source']}: {item['chunks']} chunks "
+                f"({item.get('parent_chunks', 0)} parent / "
+                f"{item.get('child_chunks', 0)} child), {item['chars']} chars"
             )
         return "\n".join(lines)
     except Exception as exc:
@@ -48,7 +54,7 @@ def run_rag_search(
     include_captions: bool = True,
 ) -> str:
     try:
-        hits = search_chunks(
+        hits = search(
             query,
             top_k=max(1, min(top_k, 20)),
             source=source or None,
@@ -64,11 +70,19 @@ def run_rag_search(
         ]
         for index, hit in enumerate(hits, start=1):
             caption = " [图注]" if hit.get("is_caption") else ""
+            retrieval = hit.get("retrieval") or hit.get("rerank") or "search"
+            child_tag = ""
+            if hit.get("parent_id"):
+                child_tag = f" [子块#{hit.get('child_index', 0)}]"
             lines.append(
-                f"[{index}] {hit.get('source')} › {hit.get('heading_path')}{caption} "
-                f"(score={hit.get('score')})"
+                f"[{index}] {hit.get('source')} › {hit.get('heading_path')}"
+                f"{caption}{child_tag} "
+                f"(score={hit.get('score')}, via={retrieval})"
             )
             lines.append(_truncate_hit_text(hit["text"], hit_limit))
+            if hit.get("parent_text"):
+                lines.append("--- 父块（整节上下文）---")
+                lines.append(hit["parent_text"])
             lines.append("")
         return "\n".join(lines).strip()
     except Exception as exc:
@@ -85,14 +99,20 @@ def run_rag_status() -> str:
                 "Run rag_index on files/样例 (or your corpus path) first."
             )
         lines = [
-            f"Embedding: {status['embedding_model']}",
-            f"Vectors: {status['vector_count']}",
+            f"Embedding: {status['embedding_model']} ({status.get('embedding_backend', '')})",
+            f"Retrieval: {status.get('retrieval_mode', 'hybrid')}, "
+            f"rerank: {'on' if status.get('rerank_enabled') else 'off'}",
+            f"Parents: {status.get('parent_count', 0)}, "
+            f"children: {status.get('child_count', status.get('vector_count', 0))}, "
+            f"vectors: {status.get('vector_store_count', status.get('vector_count', 0))}",
             f"Corpus: {status.get('corpus_root') or '(unknown)'}",
             "Sources:",
         ]
         for name, meta in sources.items():
             lines.append(
-                f"  - {name}: {meta.get('chunks', 0)} chunks, "
+                f"  - {name}: {meta.get('chunks', 0)} chunks "
+                f"({meta.get('parent_chunks', 0)} parent / "
+                f"{meta.get('child_chunks', 0)} child), "
                 f"{meta.get('chars', 0)} chars ({meta.get('suffix', '')})"
             )
         return "\n".join(lines)

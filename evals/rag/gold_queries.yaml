@@ -1,0 +1,24 @@
+queries:
+  - id: intro_purpose
+    query: "引言 编写目的 段落结构"
+    expect_any: ["编写目的", "引言"]
+    expect_source: sample_report.md
+    top_k: 3
+
+  - id: delivery_metrics
+    query: "性能指标 FY-4 全通道"
+    expect_any: ["FY-4", "性能指标", "全通道"]
+    expect_source: metrics.md
+    top_k: 3
+
+  - id: tech_route
+    query: "技术路线 五阶段 里程碑"
+    expect_any: ["技术路线", "五阶段", "里程碑"]
+    expect_source: sample_report.md
+    top_k: 5
+
+  - id: delivery_list
+    query: "交付清单 研制报告 源代码"
+    expect_any: ["交付", "研制报告", "源代码"]
+    expect_source: metrics.md
+    top_k: 3

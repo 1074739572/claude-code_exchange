@@ -133,7 +133,7 @@ python main.py
 
 在**你的工作区目录**（cwd）跑 Agent；skills 从本包 `skills/` 加载；会话与任务状态写在 cwd 下的 `.project/` 等目录。
 
-常用命令：`/help`、`/model`、`/usage`、`/clear`、`/resume`、`/resume 2`（切换会话）、`/resume project`。
+常用命令：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/usage`、`/rag`、`/clear`、`/resume`。
 
 ```text
 › Looking up the ICML 2024 proceedings index for Ping Yang

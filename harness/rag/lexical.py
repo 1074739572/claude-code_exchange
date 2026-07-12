@@ -10,6 +10,12 @@ from pathlib import Path
 
 from harness.rag.config import INDEX_DIR, MANIFEST_PATH
 from harness.rag.ingest import load_chunks_for_source, load_manifest, save_manifest
+from harness.rag.parents import (
+    is_searchable,
+    persist_parents,
+    remove_sources_from_parents,
+    split_chunks,
+)
 
 _lock = threading.Lock()
 _corpus: list[dict] = []
@@ -99,14 +105,25 @@ def index_chunks(sources: list[str] | None = None) -> dict:
         for source in all_sources:
             merged.extend(load_chunks_for_source(source))
 
-        _build_index(merged)
-        _persist(merged)
+        parents, searchable = split_chunks(merged)
+        remove_sources_from_parents(set(all_sources))
+        if parents:
+            persist_parents(parents)
+
+        _build_index(searchable)
+        _persist(searchable)
 
         manifest["embedding_model"] = "bm25-lexical"
         manifest["embedding_backend"] = "bm25"
-        manifest["vector_count"] = len(merged)
+        manifest["vector_count"] = len(searchable)
+        manifest["parent_count"] = len(parents)
+        manifest["child_count"] = len(searchable)
         save_manifest(manifest)
-        return {"indexed_chunks": len(merged), "sources": all_sources}
+        return {
+            "indexed_chunks": len(searchable),
+            "parent_chunks": len(parents),
+            "sources": all_sources,
+        }
 
 
 def search_chunks(
@@ -114,6 +131,7 @@ def search_chunks(
     *,
     top_k: int = 8,
     source: str | None = None,
+    sources: list[str] | None = None,
     chapter: str | None = None,
     include_captions: bool = True,
 ) -> list[dict]:
@@ -126,9 +144,16 @@ def search_chunks(
         if not query_tokens:
             return []
 
+        allowed = set(sources or [])
+        if source:
+            allowed = {source}
+
         scored = []
         for chunk in _corpus:
-            if source and chunk.get("source") != source:
+            if not is_searchable(chunk):
+                continue
+            chunk_source = chunk.get("source", "")
+            if allowed and chunk_source not in allowed:
                 continue
             if chapter and chunk.get("chapter") != chapter:
                 continue
@@ -151,6 +176,7 @@ def search_chunks(
         for item in scored[:top_k]:
             hits.append(
                 {
+                    "id": item.get("id", ""),
                     "text": item["text"],
                     "score": item["score"],
                     "source": item.get("source", ""),
@@ -160,6 +186,10 @@ def search_chunks(
                     "style": item.get("style", ""),
                     "char_count": item.get("char_count", 0),
                     "is_caption": bool(item.get("is_caption")),
+                    "chunk_index": item.get("chunk_index", 0),
+                    "level": item.get("level", "child"),
+                    "parent_id": item.get("parent_id"),
+                    "child_index": item.get("child_index", 0),
                 }
             )
         return hits
@@ -172,6 +202,8 @@ def rag_status_dict() -> dict:
         "embedding_model": manifest.get("embedding_model") or "bm25-lexical",
         "embedding_backend": manifest.get("embedding_backend", "bm25"),
         "vector_count": len(_corpus),
+        "parent_count": manifest.get("parent_count", 0),
+        "child_count": manifest.get("child_count", len(_corpus)),
         "corpus_root": manifest.get("corpus_root"),
         "sources": manifest.get("sources", {}),
         "manifest_path": str(MANIFEST_PATH),

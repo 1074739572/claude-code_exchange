@@ -55,7 +55,8 @@ def _match_cli_command(query: str, command: str) -> bool:
 def _help_text() -> str:
     return """Commands:
   /model                   pick model (↑↓ Enter) or /model <id>
-  /mode [id]               pick mode (↑↓ Enter) — edit config/modes.json to add
+  /mode [id]               pick mode (↑↓ Enter): direct|plan|orchestrate|file
+  /mode file               文档问答：每句检索 files/；进模式时选指定/全部文档
   /usage [today|week|month|year|YYYY-MM-DD|YYYY-MM|YYYY]
                            local token stats + hit rate (bars; kept across /clear)
   /undo                    cancel last completed question + reply
@@ -69,6 +70,7 @@ def _help_text() -> str:
   /clear session            new session id; keep state.json
   /import-transcript [path] [full|merge]
   /transcripts             list .transcripts backups
+  /rag [status|index|add|docs|pick|select|ask]  RAG corpus + Q&A on selected docs
   /banner [style|demo]     preview welcome art (classic|emoji|typewriter|shadow3d)
   /help                    this message
   q, exit                  quit"""
@@ -230,6 +232,12 @@ def run_cli() -> None:
             renderer.plain(run_project_list_transcripts())
             print()
             continue
+        if _match_cli_command(query, "/rag"):
+            from harness.rag.commands import run_rag_cli_command
+
+            renderer.plain(run_rag_cli_command(query))
+            print()
+            continue
         if query.strip().lower() in ("/help",):
             renderer.plain(_help_text())
             print()
@@ -274,6 +282,17 @@ def run_cli() -> None:
             context = update_context(context, history)
             print()
             continue
+        from harness.modes import get_mode
+        from harness.rag.file_mode import handle_file_mode_turn, is_file_mode
+
+        # File mode: every normal message is document Q&A (RAG → answer).
+        # Slash commands above still work; exit with /mode direct.
+        if is_file_mode() or get_mode() == "file":
+            renderer.user(query)
+            renderer.plain(handle_file_mode_turn(query))
+            print()
+            continue
+
         hook_result = trigger_hooks("UserPromptSubmit", query)
         # user_prompt_hook may return an augmented query (e.g. lookup-mode
         # constraint appended). Show the user's original wording on screen,

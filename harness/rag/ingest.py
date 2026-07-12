@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from harness.rag.chunking import chunk_docx, chunk_markdown
+from harness.rag.chunking import chunk_docx, chunk_markdown, merge_short_chunk_dicts
 from harness.rag.config import (
     CHUNKS_DIR,
     DEFAULT_CORPUS,
@@ -14,6 +14,7 @@ from harness.rag.config import (
     RAG_DIR,
     SUPPORTED_SUFFIXES,
 )
+from harness.rag.parents import is_parent, is_searchable
 from harness.settings import PACKAGE_ROOT, WORKDIR
 
 
@@ -55,9 +56,11 @@ def parse_file(path: Path, source: str) -> list[dict]:
     suffix = path.suffix.lower()
     if suffix in (".md", ".txt"):
         text = path.read_text(encoding="utf-8", errors="replace")
-        return [chunk.to_dict() for chunk in chunk_markdown(source, text)]
+        raw = [chunk.to_dict() for chunk in chunk_markdown(source, text)]
+        return merge_short_chunk_dicts(raw)
     if suffix == ".docx":
-        return [chunk.to_dict() for chunk in chunk_docx(source, path)]
+        raw = [chunk.to_dict() for chunk in chunk_docx(source, path)]
+        return merge_short_chunk_dicts(raw)
     return []
 
 
@@ -114,11 +117,15 @@ def ingest_path(path: str | None = None) -> dict:
         stat = file_path.stat()
         chunks = parse_file(file_path, source)
         write_chunks_jsonl(source, chunks)
+        parent_count = sum(1 for chunk in chunks if is_parent(chunk))
+        child_count = sum(1 for chunk in chunks if is_searchable(chunk))
         manifest["sources"][source] = {
             "path": str(file_path),
             "mtime": stat.st_mtime,
             "chars": sum(len(c["text"]) for c in chunks),
             "chunks": len(chunks),
+            "parent_chunks": parent_count,
+            "child_chunks": child_count,
             "suffix": file_path.suffix.lower(),
             "indexed_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -126,6 +133,8 @@ def ingest_path(path: str | None = None) -> dict:
             {
                 "source": source,
                 "chunks": len(chunks),
+                "parent_chunks": parent_count,
+                "child_chunks": child_count,
                 "chars": sum(len(c["text"]) for c in chunks),
             }
         )

@@ -8,8 +8,13 @@ from harness.terminal_state import READLINE_AVAILABLE
 
 def format_cli_prompt() -> str:
     """Prompt that shows the active model (Claude Code status-line idea, lightweight)."""
+    from harness.modes import get_mode
+
     model = get_model()
+    mode = get_mode()
     # ASCII-safe for Windows GBK consoles; keep cyan like CLI_PROMPT.
+    if mode == "file":
+        return f"\033[36m[{model}|file] > \033[0m"
     return f"\033[36m[{model}] > \033[0m"
 
 

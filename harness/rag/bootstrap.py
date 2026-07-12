@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness.rag.ingest import ingest_path, resolve_path
-from harness.rag.lexical import index_chunks, rag_status_dict
+from harness.rag.pipeline import build_index, rag_status_dict
 from harness.rag.tools import run_rag_index
 from harness.settings import PACKAGE_ROOT, WORKDIR
 
@@ -59,7 +59,7 @@ def ensure_rag_indexed(path: str = DEFAULT_INDEX_PATH) -> dict:
     was_empty = index_is_empty()
     try:
         result = ingest_path(path)
-        index_result = index_chunks([item["source"] for item in result["files"]])
+        index_result = build_index([item["source"] for item in result["files"]])
     except FileNotFoundError as exc:
         return {
             "ok": False,

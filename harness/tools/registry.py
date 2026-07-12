@@ -384,7 +384,7 @@ BUILTIN_TOOLS = [
         "description": (
             "Index local reference documents for RAG (.md/.txt/.docx). "
             "Default path empty = files/样例; use path=\"files\" for the full corpus. "
-            "Builds a BM25 lexical index under .rag/."
+            "Builds hybrid lexical + vector index under .rag/."
         ),
         "input_schema": {
             "type": "object",
@@ -400,9 +400,9 @@ BUILTIN_TOOLS = [
     {
         "name": "rag_search",
         "description": (
-            "BM25 keyword search over indexed local reference documents. "
-            "Use before writing thesis/report sections to retrieve style and structure. "
-            "Requires rag_index first."
+            "Hybrid search (BM25 + embeddings) on child chunks; returns parent "
+            "section context when available. Use before writing thesis/report "
+            "sections. Requires rag_index first."
         ),
         "input_schema": {
             "type": "object",

@@ -36,8 +36,14 @@ def set_mode(mode: str) -> str:
     mode = mode.strip().lower()
     if mode not in list_mode_ids():
         return f"Unknown mode '{mode}'.\n\n{format_mode_catalog()}"
+    previous = get_mode()
     with _lock:
         _current_mode = mode
+    if mode == "file" and previous != "file":
+        from harness.rag.file_mode import on_enter_file_mode
+
+        # on_enter already includes a short banner; skip duplicate status dump
+        return on_enter_file_mode()
     return format_mode_status()
 
 
@@ -48,6 +54,10 @@ def format_mode_status() -> str:
     parts = [f"Mode: {profile.id} — {profile.label}"]
     if profile.summary:
         parts.append(profile.summary)
+    if profile.id == "file":
+        from harness.rag.file_mode import format_file_mode_banner
+
+        return format_file_mode_banner()
     if profile.enable_task:
         parts.append("task() enabled → see config/agents.json")
     if profile.lead_model_hint:
