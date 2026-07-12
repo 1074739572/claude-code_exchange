@@ -45,8 +45,9 @@ cd learn-claude-code
 
 | 改进 | 说明 | 记录 |
 |------|------|------|
-| Resume OpenCode 模式 | 默认全新会话；`/clear` 一次清干净；续项目需 `/resume project` 显式 opt-in | [003](docs/bugs/003-resume-opt-in.md) |
+| Resume OpenCode 模式 | 默认全新会话；`/clear` 一次清干净；`/resume N` 切换会话；续项目需 `/resume project` | [003](docs/bugs/003-resume-opt-in.md) |
 | Todo 持久化与提醒 | `sessions/<id>/todos.json`（跟会话）；每轮注入；reminder | [001](docs/bugs/001-todo-drift.md) · [003](docs/bugs/003-resume-opt-in.md) |
+| 工具空转护栏 | RepeatGuard；工具 UI 摘要；Lookup mode（查找题自动收口） | [005](docs/bugs/005-tool-loop-drift.md) |
 | 中断与回滚 | Esc / SIGINT 停当前轮；orphan `tool_use` 修复，避免 API 400 | [001](docs/bugs/001-todo-drift.md) |
 | Prompt 缓存分层 | static / dynamic / ephemeral 分离，提高 cache hit | [002](docs/bugs/002-prompt-cache-vs-dynamic-context.md) |
 | 上下文压缩 Phase 1 | compact 保留尾部；结构化摘要；micro_compact 落盘可恢复；时间默认分钟粒度 | [004](docs/bugs/004-context-compaction.md) |
@@ -62,7 +63,8 @@ cd learn-claude-code
 | 模式与子 Agent 配置 | `config/modes*.json`、`config/agents.json` |
 | 本地用量统计 | `.project/usage/` 按日流水；`/usage` 日/周/月/年 + 字符柱；提示符显示当前模型 |
 
-问题与取舍的详细说明在 [`docs/bugs/`](docs/bugs/README.md)，按编号记录「现象 → 根因 → 改了什么」。
+文档索引：[`docs/`](docs/README.md)（bugs 记录、changelog、评测说明）。  
+问题与取舍见 [`docs/bugs/`](docs/bugs/README.md)，按编号记录「现象 → 根因 → 改了什么」。
 
 后续改什么不写死路线图——有新痛点再一起商量，改完补一条 bug 记录即可。
 
@@ -79,7 +81,9 @@ improved_harness/
 ├── skills/                 # 内置技能
 ├── tests/                  # 单元测试
 ├── docs/
-│   ├── bugs/               # 问题与改进记录（001–004…）
+│   ├── README.md           # 文档索引
+│   ├── evals.md            # mini-eval / SWE-bench 说明
+│   ├── bugs/               # 问题与改进记录（001–005…）
 │   └── CHANGELOG-*.md      # 阶段性改动总览
 ├── scripts/                # 实验与文档构建脚本
 └── harness/                # 核心包
@@ -110,7 +114,7 @@ improved_harness/
 
 | 路径 | 内容 |
 |------|------|
-| `.project/` | session、todos、state、history |
+| `.project/` | `sessions/<id>/`（对话+todos）、`state.json`（长任务）、history |
 | `.transcripts/` | compact 前完整备份 |
 | `.memory/MEMORY.md` | 长期记忆 |
 | `.tasks/` / `.mailboxes/` / `.worktrees/` | 任务图、队友邮箱、worktree |
@@ -129,7 +133,7 @@ python main.py
 
 在**你的工作区目录**（cwd）跑 Agent；skills 从本包 `skills/` 加载；会话与任务状态写在 cwd 下的 `.project/` 等目录。
 
-常用命令：`/help`、`/model`、`/usage`、`/clear`、`/resume`、`/resume project`。
+常用命令：`/help`、`/model`、`/usage`、`/clear`、`/resume`、`/resume 2`（切换会话）、`/resume project`。
 
 ```text
 › Looking up the ICML 2024 proceedings index for Ping Yang
@@ -149,7 +153,7 @@ python main.py
 
 ## 评测（mini-eval / SWE-bench）
 
-本地能力回归：
+本地能力回归（评 harness 接线，不评「聪不聪明」）：
 
 ```sh
 python -m evals
@@ -164,7 +168,7 @@ python -m evals.swebench --limit 1
 python -m evals.swebench --limit 1 --eval   # 需 Docker Desktop；官方 resolve 打分
 ```
 
-结果在 `evals/results/`（含 `swebench/latest_report.json`）。
+结果在 `evals/results/`。说明见 [docs/evals.md](docs/evals.md)。
 
 ## MCP（可选插件）
 

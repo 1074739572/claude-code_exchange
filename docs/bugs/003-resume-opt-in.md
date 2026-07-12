@@ -40,7 +40,10 @@
 | 启动 banner | 显示「OpenCode 模式」；磁盘上若有旧 session，提示如何续 |
 | `/clear` | **一次清干净**：session + todos + state.json |
 | `/clear session` | 轻量版：只清对话，保留 state.json |
-| `/resume` | 看磁盘上 session + todos + 论文摘要（**只读**） |
+| `/resume` | 列出会话（序号 + 标题 + 创建时间）+ 长任务一行 |
+| `/resume <N>` 或 `/resume <标题>` | **切换**到该会话，加载 messages/todos，显示最后一条预览 |
+| `/resume delete <N>` | 删除列表中的会话目录 |
+| `/resume delete project` | 删除长任务 `state.json` |
 | `/resume project` | **opt-in** 注入 `[Resume context]` 一条 user 消息 |
 | static system | **不再提** thesis；只说「特殊工作流用 load_skill，长项目不自动注入」 |
 
@@ -79,6 +82,12 @@ HARNESS_WELCOME_PROJECT=1      # Welcome 显示章节行
 python main.py
 > 写实施方案 …
 
+# 看有哪些会话
+/resume
+
+# 切到第 2 个会话（或 /resume 你现在的任务是什么）
+/resume 2
+
 # 想续论文（显式）
 /resume project
 > 继续写第 3 章 …
@@ -88,6 +97,12 @@ python main.py
 
 # 只清对话，留论文表
 /clear session
+
+# 删某个旧会话
+/resume delete 3
+
+# 删长任务档案
+/resume delete project
 
 # 想让重启自动续对话
 $env:HARNESS_CONTINUE_SESSION=1

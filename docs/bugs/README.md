@@ -3,7 +3,8 @@
 本目录记录真实使用中的问题、根因，以及整条链路上的修复。  
 **不是路线图**：下面「仍可商量」只是观察项，下一步做什么一起定。
 
-上游与已做能力总览见 [README.md](../../README.md)。
+上游与已做能力总览见 [README.md](../../README.md)。  
+文档索引：[docs/README.md](../README.md) · 评测：[evals.md](../evals.md)
 
 ---
 
@@ -17,7 +18,7 @@
 | [004](./004-context-compaction.md) | 上下文压缩丢信息 | Phase 1 + 最新 user 优先 | compact 留 tail + 结构化摘要 + tool 落盘；摘要不压过本条用户话 |
 | [005](./005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解 | 同 URL 死循环 fetch；**已找到仍续爬**（Pu Keyang 案例 ≈65–89 万 token 才收口）；Lookup mode 自动约束 |
 
-相关能力（非 bug 单）：本地 `/usage` 用量统计（`.project/usage/`，提示符显模型）；SWE-bench Lite 评测（`python -m evals.swebench`）。
+相关能力（非 bug 单）：本地 `/usage` 用量统计；mini-eval（[evals.md](../evals.md)）；SWE-bench Lite（`python -m evals.swebench`）。
 
 ---
 

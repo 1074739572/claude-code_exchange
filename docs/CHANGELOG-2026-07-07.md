@@ -167,6 +167,8 @@ HARNESS_WELCOME_PROJECT=1      # Welcome 显示章节行
 ## 五、相关文件锚点
 
 ```text
+docs/README.md
+docs/CHANGELOG-2026-07-12.md
 docs/bugs/001-todo-drift.md
 docs/bugs/002-prompt-cache-vs-dynamic-context.md
 docs/bugs/003-resume-opt-in.md
