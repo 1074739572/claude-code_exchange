@@ -1,9 +1,11 @@
 # 005 — 工具空转与目标漂移（检索死循环 · 意图展示）
 
-**状态：** 部分缓解（RepeatGuard + 工具 UI 摘要 + 调工具前展示模型 text + **Lookup mode 自动约束**）  
+**状态：** 部分缓解（RepeatGuard · LookupGuard · micro_compact 防嵌套 · MCP 超时温和返回）  
 **影响：** 长检索 / MCP fetch / 任何「手段取代目的」的多轮工具任务  
 **关联：** [001 偏移 B](./001-todo-drift.md) · [004 压缩](./004-context-compaction.md)  
-**证据会话：** `.project/session_1783772951.jsonl`、`.project/session.jsonl`（2026-07-11，查「南信大 Pu Keyang / ICML 2026」）
+**证据会话：**
+- `.project/session_1783772951.jsonl`（2026-07-11，Pu Keyang / ICML 2026）
+- `.transcripts/transcript_1783839076.jsonl`（2026-07-12，南信大 ICML 2026；403/robots 后仍换 URL）
 
 ---
 
@@ -45,6 +47,49 @@
 | `tool_result` → 模型 | 模型 | 同一页内容反复进上下文 → **真的在空转** |
 
 所以问题是 **agent 行为循环 + 目标漂移**，不是渲染 bug。
+
+---
+
+## 2026-07-12 补充：失败不换口 · compact 套娃 · 超时体感
+
+### 现象（用户原话）
+
+> 查找网页 tool 超时 / 报错，为什么那么长时间仍然不返回？
+
+终端表现（`terminals/3.txt`、`transcript_1783839076.jsonl`）：
+
+- OpenAlex / OpenReview / DBLP / Semantic Scholar **快速返回错误**（403、robots、429），并非 harness 卡死 120s
+- 模型 **换 URL 继续 fetch**，迟迟不说「有/没有」
+- `micro_compact` 把旧 `tool_result` **重复包裹** `<persisted-output>`，模型在上下文里看不清已查到的 JSON
+- `compact` 摘要 `Remaining Work` 写「再试 Semantic Scholar」，与 lookup 收口规则冲突
+
+### 根因（三层）
+
+| 层 | 机制 | 后果 |
+|----|------|------|
+| **Harness** | 工具失败只进 `tool_result`，**loop 不停止**；lookup 约束仅 prompt | 错误 → 模型再试 → 再错误 |
+| **Compact** | `persist_recallable_output` 对已包裹内容再次包裹 | 套娃 preview，模型以为「没查到」 |
+| **模型** | 403/robots 后仍换参重试；compact 摘要推动「继续爬」 | 用户体感「一直 fetch、不回答」 |
+
+MCP `future.result(timeout=120)` 超时抛 `TimeoutError` 时，此前**未捕获**，可能整轮 loop 崩溃（与 bash 的 `Error: Timeout (120s)` 不一致）。
+
+### 已改（2026-07-12）
+
+| 项 | 行为 |
+|----|------|
+| **LookupGuard** | lookup 模式：`≤6` 次 fetch（`HARNESS_LOOKUP_FETCH_LIMIT`）；连续 `2` 次无效结果硬拦（`HARNESS_LOOKUP_STALE_LIMIT`）；robots/403/429 的 host 黑名单 |
+| **micro_compact 防嵌套** | `is_persisted_output()` — 已 `<persisted-output>` 不再二次包裹 |
+| **MCP / dispatch 超时** | 120s 超时与其它异常 → 错误字符串，不崩溃 loop |
+| **compact 摘要** | lookup 任务 `Remaining Work` 不得写「再试更多 URL」，应写「现在回答 有/没有」 |
+| **cli** | `context["lookup_mode"]` 驱动 LookupGuard |
+
+### 验证
+
+```sh
+pytest tests/test_lookup_guard.py tests/test_lookup_guard_loop.py tests/test_compact.py -q
+```
+
+手动：lookup 题连续 403/robots 后应出现 `[LookupGuard] Blocked`，模型被迫文字收口。
 
 ---
 
@@ -178,7 +223,10 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 | **重复调用折叠展示** | `↻ ×N` / `⊘ blocked` | `renderer.tool_repeat` |
 | **调工具前展示意图** | 同轮 `text` → `› …`；最终纯文本回答仍在回合结束打印 | `loop.py` · `renderer.tool_intent` · `cli.print_turn_assistants` |
 | **Prompt 轻推** | identity：调工具前一句短意图（可再弱化/删除） | `harness/prompts/sections.py` |
-| **Lookup mode 自动约束** | 检测查找/可行性问句 → 原话保留、追加收口约束（成功标准 / 禁爬整站 / 预算 ≤6 次联网）；屏幕提示 `[lookup mode]` | `harness/prompts/lookup.py` · `harness/hooks.py` · `harness/cli.py` · `tests/test_lookup_mode.py` |
+| **Lookup mode 自动约束** | 检测查找题 → 追加收口规则；`context.lookup_mode` 驱动 LookupGuard | `harness/prompts/lookup.py` · `hooks.py` · `cli.py` |
+| **LookupGuard** | lookup 模式硬拦截：超预算 / 连续无效 fetch / robots 主机重试 | `harness/agent/lookup_guard.py` · `loop.py` |
+| **micro_compact 防嵌套** | 已 `<persisted-output>` 的结果不再二次包裹 | `harness/agent/compact/persist.py` · `layers.py` |
+| **MCP 超时温和返回** | 120s 超时返回错误字符串，不崩溃 loop | `harness/mcp/client.py` · `dispatch.py` |
 
 ---
 
@@ -187,7 +235,7 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 | 候选 | 痛点 | 大致做法 |
 |------|------|----------|
 | **主循环默认 max_rounds** | 空转可无限 | 如 25 轮到期强制总结并停工具 |
-| **失败 URL / robots 黑名单** | 挡了还撞墙 | 同 URL/同错误类限次 |
+| ~~**失败 URL / robots 黑名单**~~ | 挡了还撞墙 | **lookup 模式已做**：同 host robots/403/429 后不再试 |
 | **收口提醒** | 搜了很久仍不答用户；**已找到仍续爬** | 每 K 轮对照最新用户话：能答则停搜；标题/条目出现即强制总结 |
 | **任务完成判定** | 「找到论文」不停 | lookup 成功标准写死：有标题即交付，affiliation 可选 |
 | **fetch 结果强制落盘+短预览** | 大 HTML 喂进对话 | MCP/fetch 路径走 persist 阈值 |

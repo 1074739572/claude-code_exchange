@@ -37,6 +37,8 @@ def _structured_summary_instruction() -> str:
         "- Changed Files: bullet list of paths touched and what changed.\n"
         "- Key Findings: facts, errors, metrics, or decisions that must survive compaction.\n"
         "- Remaining Work: concrete next steps; include drift complaints or wrong paths.\n"
+        "- For lookup / paper-search tasks: if sources failed or budget is spent, "
+        "Remaining Work MUST be 'answer 有/没有 now' — never 'try more URLs'.\n"
         "- Do NOT Forget: non-negotiables the agent must not drop (e.g. sample doc paths).\n"
     )
 

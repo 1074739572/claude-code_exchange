@@ -12,6 +12,8 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
         return handler(**(args or {}))
     except TypeError as exc:
         return f"Error: {exc}"
+    except Exception as exc:
+        return f"Error: {type(exc).__name__}: {exc}"
 
 
 def extract_text(content) -> str:

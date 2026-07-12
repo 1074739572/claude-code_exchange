@@ -173,6 +173,32 @@ class TestMicroCompactPersist(unittest.TestCase):
             self.assertTrue((tool_dir / "tool-old.txt").exists())
             self.assertFalse((tool_dir / "tool-latest.txt").exists())
 
+    def test_micro_compact_skips_already_persisted(self) -> None:
+        import harness.agent.compact.persist as persist_mod
+
+        wrapped = (
+            "<persisted-output compacted>\nFull output: /tmp/x.txt\n"
+            "Preview:\nhello\n</persisted-output>"
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t-old", "content": wrapped},
+                    {"type": "tool_result", "tool_use_id": "t-mid", "content": "y" * 500},
+                    {"type": "tool_result", "tool_use_id": "t-new", "content": "z" * 500},
+                    {"type": "tool_result", "tool_use_id": "t-latest", "content": "w" * 500},
+                ],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            tool_dir = Path(tmp) / "tool_results"
+            with unittest.mock.patch.object(persist_mod, "TOOL_RESULTS_DIR", tool_dir):
+                result = micro_compact(messages)
+        old_block = result[0]["content"][0]["content"]
+        self.assertEqual(old_block, wrapped)
+        self.assertNotIn("<persisted-output compacted>\nFull output:", old_block.replace(wrapped, ""))
+
 
 class TestPromptTooLong(unittest.TestCase):
     def test_deepseek_range_error_detected(self) -> None:

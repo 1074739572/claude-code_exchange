@@ -81,7 +81,12 @@ class RealMCPClient:
       self._call_tool_async(tool_name, args or {}),
       self._loop,
     )
-    return future.result(timeout=120)
+    try:
+      return future.result(timeout=120)
+    except TimeoutError:
+      return f"MCP error: Tool '{tool_name}' timed out after 120s"
+    except Exception as exc:
+      return f"MCP error: {type(exc).__name__}: {exc}"
 
   async def _call_tool_async(self, tool_name: str, args: dict) -> str:
     result = await self._session.call_tool(tool_name, arguments=args)

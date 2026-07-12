@@ -7,6 +7,13 @@ from pathlib import Path
 from harness.settings import PERSIST_THRESHOLD, TOOL_RESULTS_DIR
 
 _MICRO_COMPACT_MIN_CHARS = 120
+_PERSISTED_PREFIX = "<persisted-output"
+
+
+def is_persisted_output(text: str) -> bool:
+    """True when output is already a persisted-output wrapper."""
+    stripped = str(text).strip()
+    return stripped.startswith(_PERSISTED_PREFIX) and "</persisted-output>" in stripped
 
 
 def _write_tool_result_to_disk(tool_use_id: str, output: str) -> Path:
@@ -18,6 +25,8 @@ def _write_tool_result_to_disk(tool_use_id: str, output: str) -> Path:
 
 
 def persist_large_output(tool_use_id: str, output: str) -> str:
+    if is_persisted_output(output):
+        return output
     if len(output) <= PERSIST_THRESHOLD:
         return output
     path = _write_tool_result_to_disk(tool_use_id, output)
@@ -35,6 +44,8 @@ def persist_recallable_output(
     preview_chars: int = 500,
 ) -> str:
     """Persist compacted tool output so the agent can read_file the full text."""
+    if is_persisted_output(output):
+        return output
     if len(output) <= min_len:
         return output
     path = _write_tool_result_to_disk(tool_use_id, output)

@@ -9,7 +9,7 @@
 | 编号 | 问题 | 状态 |
 |------|------|------|
 | [003](./bugs/003-resume-opt-in.md) | 多会话 + todos 跟 session；`/resume N` 切换 | 已实施 |
-| [005](./bugs/005-tool-loop-drift.md) | 同 URL 死循环 fetch；找到答案仍续爬 | 部分缓解 |
+| [005](./bugs/005-tool-loop-drift.md) | 同 URL 死循环；找到仍续爬；**失败仍换 URL / compact 套娃** | 部分缓解 |
 
 ---
 
@@ -44,10 +44,12 @@
 | 项 | 位置 |
 |----|------|
 | RepeatGuard（同参连续 N 次拦截） | `harness/agent/repeat_guard.py` |
-| 工具 UI 摘要 + 调工具前 `›` 意图 | `harness/ui/tool_display.py` · `loop.py` |
+| LookupGuard（lookup 预算 / 无效结果 / host 黑名单） | `harness/agent/lookup_guard.py` · `loop.py` |
+| micro_compact 防 persisted 嵌套 | `harness/agent/compact/persist.py` · `layers.py` |
+| MCP / dispatch 超时温和返回 | `harness/mcp/client.py` · `tools/dispatch.py` |
 | Lookup mode 自动约束 | `harness/prompts/lookup.py` · `hooks.py` · `cli.py` |
 
-证据会话与 token 估算见 [005-tool-loop-drift.md](./bugs/005-tool-loop-drift.md)。
+证据会话见 [005-tool-loop-drift.md](./bugs/005-tool-loop-drift.md)（含 2026-07-12 失败不换口 / compact 套娃）。
 
 ### 4. 评测套件
 
@@ -66,6 +68,10 @@
 | `tests/test_session_scoped_todos.py` | session 目录、todos 隔离、迁移 |
 | `tests/test_lookup_mode.py` | lookup 关键词检测与约束注入 |
 | `tests/test_repeat_guard.py` | 重复调用拦截 |
+| `tests/test_lookup_guard.py` | LookupGuard 预算/无效结果/host 黑名单 |
+| `tests/test_lookup_guard_loop.py` | mock loop 集成 |
+| `tests/test_compact.py` | micro_compact 防 persisted 嵌套 |
+
 
 ---
 
@@ -83,7 +89,7 @@
 /resume              # 短列表
 /resume 2            # 切到第 2 个会话
 /resume delete 1     # 删列表中的会话
-查找类问题           # 自动 [lookup mode] 约束（原话保留 + 收口规则）
+查找类问题           # [lookup mode] + LookupGuard 硬拦无效 fetch
 ```
 
 ---
@@ -102,9 +108,14 @@ harness/project/resume.py
 harness/todos/state.py
 harness/prompts/lookup.py
 harness/agent/repeat_guard.py
+harness/agent/lookup_guard.py
+harness/agent/compact/persist.py
 
 evals/
 tests/test_session_scoped_todos.py
 tests/test_lookup_mode.py
 tests/test_repeat_guard.py
+tests/test_lookup_guard.py
+tests/test_lookup_guard_loop.py
+tests/test_compact.py
 ```

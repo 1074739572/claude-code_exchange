@@ -148,6 +148,7 @@ python main.py
 - `HARNESS_TOOL_UI=compact`（默认）| `verbose`（旧式大面板+原文预览）| `off`
 - `HARNESS_VERBOSE=1` 恢复 `[HOOK] …` 调试行
 - 同一工具+相同参数连续调用满 3 次会被拦截（`HARNESS_REPEAT_LIMIT`），避免死循环刷屏
+- 查找题（lookup mode）联网 fetch 默认 ≤6 次（`HARNESS_LOOKUP_FETCH_LIMIT`）；连续 2 次无效结果会硬拦截（`HARNESS_LOOKUP_STALE_LIMIT`）
 
 提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
 

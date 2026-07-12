@@ -9,6 +9,7 @@ from harness.agent.compact.messages import (
 )
 from harness.agent.compact.persist import (
     _MICRO_COMPACT_MIN_CHARS,
+    is_persisted_output,
     persist_large_output,
     persist_recallable_output,
 )
@@ -40,6 +41,8 @@ def tool_result_budget(messages: list, max_bytes: int = 200_000) -> list:
         if total <= max_bytes:
             break
         text = str(block.get("content", ""))
+        if is_persisted_output(text):
+            continue
         block["content"] = persist_large_output(block.get("tool_use_id", "unknown"), text)
         total = sum(len(str(item.get("content", ""))) for _, item in blocks)
     return messages
@@ -76,6 +79,8 @@ def micro_compact(messages: list) -> list:
         return messages
     for message_index, block_index, block in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
         text = str(block.get("content", ""))
+        if is_persisted_output(text):
+            continue
         if len(text) <= _MICRO_COMPACT_MIN_CHARS:
             continue
         tool_id = block.get("tool_use_id") or f"micro-{message_index}-{block_index}"

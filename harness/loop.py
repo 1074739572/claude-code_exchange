@@ -19,6 +19,7 @@ from harness.agent.recovery import (
     with_retry,
 )
 from harness.agent.repeat_guard import RepeatGuard
+from harness.agent.lookup_guard import LookupGuard
 from harness.context import update_context
 from harness.hooks import trigger_hooks
 from harness.llm import create_message
@@ -81,6 +82,7 @@ def agent_loop(
     max_tokens = DEFAULT_MAX_TOKENS
     llm_rounds = 0
     repeat_guard = RepeatGuard()
+    lookup_guard = LookupGuard(active=bool(context.get("lookup_mode")))
 
     while True:
         if is_cancelled():
@@ -218,6 +220,30 @@ def agent_loop(
                 )
                 continue
 
+            lookup_block, lookup_msg = lookup_guard.check_before_fetch(
+                name, tool_input if isinstance(tool_input, dict) else None
+            )
+            if lookup_block:
+                renderer.tool_repeat(
+                    name,
+                    tool_input if isinstance(tool_input, dict) else None,
+                    streak=lookup_guard.fetch_count + 1,
+                    blocked=True,
+                )
+                renderer.tool_result(
+                    lookup_msg,
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block_field(block, "id", ""),
+                        "content": lookup_msg,
+                    }
+                )
+                continue
+
             blocked = trigger_hooks("PreToolUse", block)
             if blocked:
                 renderer.tool_result(
@@ -255,7 +281,11 @@ def agent_loop(
                 continue
 
             handler = handlers.get(name)
+            lookup_guard.note_fetch(name, tool_input if isinstance(tool_input, dict) else None)
             output = call_tool_handler(handler, tool_input, name)
+            lookup_guard.note_result(
+                name, tool_input if isinstance(tool_input, dict) else None, str(output)
+            )
             trigger_hooks("PostToolUse", block, output)
             renderer.tool_result(
                 str(output),

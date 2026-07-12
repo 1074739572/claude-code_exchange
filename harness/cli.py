@@ -281,12 +281,15 @@ def run_cli() -> None:
         model_query = hook_result if isinstance(hook_result, str) else query
         from harness.project.session_registry import touch_session_title_from_query
 
+        from harness.prompts.lookup import is_lookup_query
+
         touch_session_title_from_query(query)
         repair_tool_pairing(history)
         renderer.user(query)
         turn_start = len(history)
         history.append({"role": "user", "content": model_query})
         context["latest_user_query"] = query
+        context["lookup_mode"] = is_lookup_query(query)
 
         listener = InterruptListener()
         interrupted = False
