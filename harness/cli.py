@@ -92,9 +92,20 @@ def _assistant_text_blocks(content) -> list[str]:
     return texts
 
 
-def print_turn_assistants(messages: list, turn_start: int) -> None:
-    """Print final assistant prose for this turn (skip tool-rounds already narrated live)."""
-    for msg in messages[turn_start:]:
+def print_turn_assistants(messages: list, turn_start: int | None) -> None:
+    """Print final assistant prose for this turn (skip tool-rounds already narrated live).
+
+    After context compact, ``messages`` is rewritten and may be shorter than the
+    pre-turn ``turn_start`` index. Resolve to the latest real user turn so the
+    final answer is still printed (otherwise the UI looks blank even though the
+    model already replied into history).
+    """
+    from harness.project.session_undo import resolve_turn_start
+
+    resolved = resolve_turn_start(messages, turn_start)
+    if resolved is None:
+        return
+    for msg in messages[resolved:]:
         if msg.get("role") != "assistant":
             continue
         content = msg.get("content")
