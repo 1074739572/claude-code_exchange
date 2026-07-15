@@ -18,6 +18,7 @@ from harness.agent.recovery import (
     is_prompt_too_long_error,
     with_retry,
 )
+from harness.agent.grounding_guard import GroundingGuard
 from harness.agent.repeat_guard import RepeatGuard
 from harness.agent.lookup_guard import LookupGuard
 from harness.agent.writing_guard import WritingGuard
@@ -40,7 +41,7 @@ from harness.tools.registry import get_tool_pool
 from harness.todos.format import format_todo_reminder
 from harness.todos.state import note_llm_round_without_todo_update, rounds_since_todo_update
 from harness.ui.renderer import renderer
-from harness.ui.tool_display import tool_ui_mode
+from harness.ui.turn_summary import TurnMutationTracker
 
 agent_lock = threading.Lock()
 
@@ -83,12 +84,19 @@ def agent_loop(
     max_tokens = DEFAULT_MAX_TOKENS
     llm_rounds = 0
     repeat_guard = RepeatGuard()
+    grounding_guard = GroundingGuard()
     lookup_guard = LookupGuard(active=bool(context.get("lookup_mode")))
     writing_guard = WritingGuard(active=bool(context.get("writing_mode")))
+    mutations = TurnMutationTracker()
+
+    def _finish(interrupted: bool) -> bool:
+        if mutations.paths:
+            renderer.files_changed(mutations.paths)
+        return interrupted
 
     while True:
         if is_cancelled():
-            return True
+            return _finish(True)
 
         if max_rounds is not None and llm_rounds >= max_rounds:
             messages.append(
@@ -103,7 +111,7 @@ def agent_loop(
                 }
             )
             trigger_hooks("Stop", messages)
-            return False
+            return _finish(False)
 
         fired = consume_cron_queue()
         for job in fired:
@@ -127,7 +135,7 @@ def agent_loop(
             response = call_llm(messages, context, tools, state, max_tokens)
         except Exception as exc:
             if is_cancelled():
-                return True
+                return _finish(True)
             if is_prompt_too_long_error(exc) and not state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(messages)
                 state.has_attempted_reactive_compact = True
@@ -138,10 +146,10 @@ def agent_loop(
                     "content": [{"type": "text", "text": f"[Error] {type(exc).__name__}: {exc}"}],
                 }
             )
-            return False
+            return _finish(False)
 
         if is_cancelled():
-            return True
+            return _finish(True)
 
         if response.stop_reason == "max_tokens":
             if not state.has_escalated:
@@ -154,7 +162,7 @@ def agent_loop(
                 messages.append({"role": "user", "content": CONTINUATION_PROMPT})
                 state.recovery_count += 1
                 continue
-            return False
+            return _finish(False)
 
         max_tokens = DEFAULT_MAX_TOKENS
         state.has_escalated = False
@@ -180,25 +188,50 @@ def agent_loop(
                 )
                 continue
             trigger_hooks("Stop", messages)
-            return False
+            return _finish(False)
 
         results = []
         compacted_now = False
         had_todo_write = False
+        grounding_block, grounding_msg = grounding_guard.evaluate(
+            messages, response.content
+        )
         for block in response.content:
             if is_cancelled():
                 finalize_cancelled_tool_round(messages, response.content, results)
-                return True
+                return _finish(True)
             # Show the model's brief "why" text before tools (human UI only).
             if is_text(block):
                 text = block_text(block).strip()
-                if text and tool_ui_mode() != "off":
+                if text:
                     renderer.tool_intent(text)
                 continue
             if not is_tool_use(block):
                 continue
             name = block_field(block, "name", "")
             tool_input = block_field(block, "input", {}) or {}
+
+            if grounding_block:
+                renderer.tool_repeat(
+                    name,
+                    tool_input if isinstance(tool_input, dict) else None,
+                    streak=1,
+                    blocked=True,
+                )
+                renderer.tool_result(
+                    grounding_msg,
+                    name=name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else None,
+                )
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block_field(block, "id", ""),
+                        "content": grounding_msg,
+                    }
+                )
+                continue
+
             streak, should_block = repeat_guard.note(
                 name, tool_input if isinstance(tool_input, dict) else {}
             )
@@ -332,6 +365,11 @@ def agent_loop(
                 name, tool_input if isinstance(tool_input, dict) else None, str(output)
             )
             writing_guard.note_tool(name)
+            mutations.note(
+                name,
+                tool_input if isinstance(tool_input, dict) else None,
+                output,
+            )
             trigger_hooks("PostToolUse", block, output)
             renderer.tool_result(
                 str(output),
@@ -357,7 +395,7 @@ def agent_loop(
 
         if is_cancelled():
             finalize_cancelled_tool_round(messages, response.content, results)
-            return True
+            return _finish(True)
 
         if not had_todo_write:
             note_llm_round_without_todo_update()

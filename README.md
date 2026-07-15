@@ -136,16 +136,15 @@ python main.py
 常用命令：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/usage`、`/rag`、`/clear`、`/resume`。
 
 ```text
-› Looking up the ICML 2024 proceedings index for Ping Yang
-● mcp__fetch__fetch  url=https://proceedings.mlr.press/v235/
-  → 42 lines · …
+› Working goal: 修好 lookup 死循环
 ● edit_file  harness/loop.py
-  → Edited harness/loop.py
+● read_file  harness/agent/lookup_guard.py
+Changed files:
+  · harness/loop.py
 ```
 
-工具调用默认 **摘要展示**（给人看），完整结果仍进对话给模型。`› …` 是模型在调工具前写的一句意图（若模型没写则没有）。
+默认只展示 **每一步在做什么**（意图 + 工具名/路径），成功结果不刷屏；完整 tool_result 仍进对话给模型。回合结束列出本轮 `write_file` / `edit_file` 改过的文件。错误与 Guard 拦截仍会显示 `→`。
 
-- `HARNESS_TOOL_UI=compact`（默认）| `verbose`（旧式大面板+原文预览）| `off`
 - `HARNESS_VERBOSE=1` 恢复 `[HOOK] …` 调试行
 - 同一工具+相同参数连续调用满 3 次会被拦截（`HARNESS_REPEAT_LIMIT`），避免死循环刷屏
 - 查找题（lookup mode）联网 fetch 默认 ≤6 次（`HARNESS_LOOKUP_FETCH_LIMIT`）；连续 2 次无效结果会硬拦截（`HARNESS_LOOKUP_STALE_LIMIT`）

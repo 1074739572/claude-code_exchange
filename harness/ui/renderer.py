@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from contextlib import contextmanager
 
@@ -10,9 +9,9 @@ from harness import terminal_state
 from harness.ui import theme
 from harness.ui.tool_display import (
     hooks_verbose,
+    is_failure_tool_output,
+    summarize_failure_output,
     summarize_tool_input,
-    summarize_tool_output,
-    tool_ui_mode,
 )
 
 try:
@@ -25,18 +24,6 @@ except ImportError:
     _RICH = False
 
 _console = Console(highlight=False, legacy_windows=False) if _RICH else None
-
-
-def _tool_input_preview(tool_input: dict | None, limit: int = 120) -> str:
-    if not tool_input:
-        return ""
-    try:
-        text = json.dumps(tool_input, ensure_ascii=False)
-    except TypeError:
-        text = str(tool_input)
-    if len(text) > limit:
-        return text[:limit] + "…"
-    return text
 
 
 class Renderer:
@@ -102,10 +89,8 @@ class Renderer:
 
     def tool_intent(self, text: str) -> None:
         """Show model's short rationale before a tool call (not a full answer panel)."""
-        mode = tool_ui_mode()
-        if mode == "off" or not (text or "").strip():
+        if not (text or "").strip():
             return
-        # Keep to a few lines so narration doesn't become another dump.
         lines = [ln.rstrip() for ln in text.strip().splitlines() if ln.strip()]
         preview = " ".join(lines)
         if len(preview) > 220:
@@ -113,28 +98,7 @@ class Renderer:
         self._write(f"› {preview}", style=theme.MUTED)
 
     def tool_start(self, name: str, tool_input: dict | None = None) -> None:
-        mode = tool_ui_mode()
-        if mode == "off":
-            return
         summary = summarize_tool_input(name, tool_input)
-        if mode == "verbose":
-            preview = _tool_input_preview(tool_input)
-            if _RICH and _console is not None:
-                body = preview if preview else "running…"
-                _console.print(
-                    Panel(
-                        body,
-                        title=f"⚙ {name}",
-                        border_style=theme.TOOL,
-                        padding=(0, 1),
-                    )
-                )
-            else:
-                line = f"> {name}"
-                if preview:
-                    line += f"  {preview}"
-                self._write(line, style=theme.TOOL)
-            return
         detail = f"  {summary}" if summary else ""
         self._write(f"● {name}{detail}", style=theme.TOOL)
 
@@ -147,9 +111,6 @@ class Renderer:
         blocked: bool = False,
     ) -> None:
         """Collapse identical consecutive calls instead of reprinting full lines."""
-        mode = tool_ui_mode()
-        if mode == "off":
-            return
         summary = summarize_tool_input(name, tool_input)
         detail = f"  {summary}" if summary else ""
         if blocked:
@@ -171,19 +132,19 @@ class Renderer:
         name: str | None = None,
         tool_input: dict | None = None,
     ) -> None:
-        mode = tool_ui_mode()
-        if mode == "off":
+        # Success results stay silent in the terminal (still go to the model).
+        if not is_failure_tool_output(preview):
             return
-        if mode == "verbose" or not name:
-            text = preview if len(preview) <= limit else preview[:limit] + "…"
-            self._write(text, style=theme.MUTED)
+        summary = summarize_failure_output(preview)
+        self._write(f"  → {summary}", style=theme.WARN)
+
+    def files_changed(self, paths: list[str]) -> None:
+        """End-of-turn summary of files write_file/edit_file touched."""
+        if not paths:
             return
-        # Don't dump full result again for repeat-guard blocks — one line is enough
-        if str(preview).startswith("[RepeatGuard]"):
-            self._write("  → blocked duplicate call", style=theme.WARN)
-            return
-        summary = summarize_tool_output(name, preview, tool_input=tool_input)
-        self._write(f"  → {summary}", style=theme.MUTED)
+        self._write("Changed files:", style=theme.MUTED)
+        for path in paths:
+            self._write(f"  · {path}", style=theme.TOOL)
 
     def plain(self, message: str) -> None:
         self._write(message)

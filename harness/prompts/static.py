@@ -10,6 +10,7 @@ def assemble_static_system_prompt() -> str:
     """Identity, tools, workspace, and skills catalog only (no per-turn session state)."""
     sections = [
         PROMPT_SECTIONS["identity"],
+        PROMPT_SECTIONS["grounding"],
         PROMPT_SECTIONS["tools"],
         PROMPT_SECTIONS["workspace"],
         (

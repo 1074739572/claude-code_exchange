@@ -1,27 +1,38 @@
-"""Human-facing summaries for tool calls (full payloads still go to the model)."""
+"""Human-facing one-line summaries for tool *actions* (full payloads still go to the model)."""
 
 from __future__ import annotations
 
-import os
+import json
 import re
 from typing import Any
 
-
-def tool_ui_mode() -> str:
-    """compact (default) | verbose | off"""
-    raw = os.getenv("HARNESS_TOOL_UI", "compact").strip().lower()
-    if raw in {"compact", "verbose", "off", "quiet"}:
-        return "off" if raw == "quiet" else raw
-    return "compact"
+_FAILURE_PREFIXES = (
+    "error:",
+    "permission denied",
+    "[repeatguard]",
+    "[lookupguard]",
+    "[groundingguard]",
+    "[writingguard]",
+)
 
 
 def hooks_verbose() -> bool:
+    import os
+
     return os.getenv("HARNESS_VERBOSE", "0").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
-    } or tool_ui_mode() == "verbose"
+    }
+
+
+def is_failure_tool_output(output: Any) -> bool:
+    text = str(output if output is not None else "").strip()
+    if not text:
+        return False
+    low = text.lower()
+    return any(low.startswith(prefix) for prefix in _FAILURE_PREFIXES)
 
 
 def _short(text: str, limit: int = 72) -> str:
@@ -56,67 +67,20 @@ def summarize_tool_input(name: str, tool_input: dict | None) -> str:
         return "…"
     if name == "github_request":
         return _short(f"{args.get('method', 'GET')} {args.get('path', '')}", 90)
-    # Generic: prefer path/query/command
     for key in ("path", "query", "command", "url", "name", "prompt"):
         if key in args and args[key] not in (None, ""):
             return _short(f"{key}={args[key]}", 90)
     if not args:
         return ""
     try:
-        import json
-
         return _short(json.dumps(args, ensure_ascii=False), 90)
     except TypeError:
         return _short(str(args), 90)
 
 
-def summarize_tool_output(
-    name: str,
-    output: Any,
-    *,
-    tool_input: dict | None = None,
-) -> str:
-    """One-line (or short) human preview of the tool result."""
-    text = str(output if output is not None else "")
-    stripped = text.strip()
-    lower = stripped.lower()
-
-    if lower.startswith("permission denied") or lower.startswith("error:"):
-        return _short(stripped, 100)
-
-    if name == "bash":
-        if stripped in {"(no output)", ""}:
-            return "ok (no output)"
-        lines = stripped.splitlines()
-        if len(lines) == 1 and len(stripped) <= 100:
-            return stripped
-        return f"{len(lines)} lines · {_short(lines[0], 60)}"
-
-    if name == "read_file":
-        if stripped.startswith("Error:"):
-            return _short(stripped, 100)
-        lines = text.splitlines()
-        path = (tool_input or {}).get("path", "")
-        head = _short(lines[0] if lines else "", 50)
-        suffix = f" · {head}" if head else ""
-        return f"{len(lines)} lines{suffix}"
-
-    if name in {"write_file", "edit_file"}:
-        return _short(stripped, 100) or "ok"
-
-    if name == "glob":
-        if stripped.startswith("(no matches)") or stripped == "":
-            return "0 matches"
-        n = len([ln for ln in stripped.splitlines() if ln.strip()])
-        return f"{n} match(es)"
-
-    if name == "todo_write":
-        return _short(stripped.splitlines()[0] if stripped else "updated", 80)
-
-    # Default
-    if not stripped:
-        return "ok"
-    lines = stripped.splitlines()
-    if len(stripped) <= 100 and len(lines) <= 2:
-        return stripped.replace("\n", " ⏎ ")
-    return f"{len(stripped)} chars · {_short(lines[0], 55)}"
+def summarize_failure_output(output: Any) -> str:
+    """Short → line for errors / guard blocks only."""
+    text = str(output if output is not None else "").strip()
+    if text.startswith("[RepeatGuard]"):
+        return "blocked duplicate call"
+    return _short(text, 100)

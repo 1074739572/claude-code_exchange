@@ -88,14 +88,12 @@ def user_prompt_hook(query: str):
     from harness.prompts.writing import is_writing_query
 
     if is_lookup_query(query):
-        augmented = augment_lookup(query)
-        print("\033[36m[lookup mode] 已自动追加收口约束（查找题：先答有无，别爬整站）\033[0m")
-        return augmented
+        # Silent for the user: constraint is for the model only.
+        return augment_lookup(query)
 
     if is_writing_query(query):
-        augmented = augment_writing(query)
-        print("\033[35m[writing mode] 已启用本地 RAG 仿写流程（files/ → rag_search → output/）\033[0m")
-        return augmented
+        # Silent for the user: workflow hint is for the model only.
+        return augment_writing(query)
 
     if not hooks_verbose():
         return None

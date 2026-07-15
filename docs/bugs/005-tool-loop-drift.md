@@ -170,6 +170,10 @@ Found the paper! Let me get more details - the OpenReview link and full HTML con
 5. **终端曾只晒工具、不晒意图**  
    模型若在同轮 `text` + `tool_use` 里写了「为什么调」，带工具的回合里 text 曾被跳过；结束才可能甩出来，用户更难判断「它在干嘛 / 是否已偏」。
 
+6. **目标未落锚就动手（Query Grounding 缺失）**  
+   用户指代模糊（「这个指标」「上面那个」）或槽位不全时，模型仍直接 call tool，并把「假设 / 注意事项」塞进参数或 intent——检索与抓页从一开始就偏，后续 RepeatGuard / LookupGuard 只能治标。  
+   **落地（2026-07-15）：** system 增加 Resolve→Act→Close + `Task grounding`；lookup 约束要求缺槽位先问；`GroundingGuard` 在首轮 tool batch 拦截「强指代 + 无 Working-goal 文本」的裸工具调用。
+
 ---
 
 ## 其他 agent 通常怎么压这类问题
@@ -183,6 +187,7 @@ Found the paper! Let me get more details - the OpenReview link and full HTML con
 | 检索分包 | explore 子 agent 只回短摘要，主上下文不吞全文 |
 | 大结果落盘 | 对话只留指针（与 004 persist 同方向） |
 | Todo 验收化 | todo 必须对应「可给用户的答案」，中间步骤超时取消并收口 |
+| 任务落锚 | 能消歧则改写 Working goal 再工具；消不了先反问；禁止 tool 参数里写假设 |
 
 共性：**不靠模型自觉，靠硬护栏 + 收口提醒。**
 
@@ -219,7 +224,7 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 | 项 | 说明 | 位置 |
 |----|------|------|
 | **RepeatGuard** | 相同工具+相同参数连续满 N 次（默认 3，`HARNESS_REPEAT_LIMIT`）则拦截，并回写提示 | `harness/agent/repeat_guard.py` · `loop.py` |
-| **工具 UI 摘要** | 默认 compact：`● name 摘要` + `→ 结果摘要`；`verbose`/`off` 可切 | `harness/ui/tool_display.py` · `renderer.py` |
+| **工具 UI** | 步骤：`›` 意图 + `● name 摘要`；成功无 `→`；回合末 `Changed files`；错误/Guard 才显示 `→` | `harness/ui/tool_display.py` · `renderer.py` · `turn_summary.py` |
 | **重复调用折叠展示** | `↻ ×N` / `⊘ blocked` | `renderer.tool_repeat` |
 | **调工具前展示意图** | 同轮 `text` → `› …`；最终纯文本回答仍在回合结束打印 | `loop.py` · `renderer.tool_intent` · `cli.print_turn_assistants` |
 | **Prompt 轻推** | identity：调工具前一句短意图（可再弱化/删除） | `harness/prompts/sections.py` |

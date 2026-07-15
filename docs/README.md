@@ -16,6 +16,7 @@
 | 本地 RAG 仿写怎么接 | [rag.md](./rag.md) |
 | 2026-07-07 大改总览 | [CHANGELOG-2026-07-07.md](./CHANGELOG-2026-07-07.md) |
 | 2026-07-12 会话 / lookup / 评测 | [CHANGELOG-2026-07-12.md](./CHANGELOG-2026-07-12.md) |
+| 2026-07-15 落锚 / 工具 UI / skills | [CHANGELOG-2026-07-15.md](./CHANGELOG-2026-07-15.md) |
 
 ---
 
