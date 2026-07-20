@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import re
+
 from harness.mcp.pool import mcp_tool_meta
 from harness.messages.blocks import block_field
 from harness.settings import WORKDIR
 from harness.tools.filesystem import safe_path
+from harness.ui.permission_prompt import ask_allow
 
 HOOKS: dict[str, list] = {
     "UserPromptSubmit": [],
@@ -15,7 +18,22 @@ HOOKS: dict[str, list] = {
 }
 
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
-DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777"]
+
+# Word-boundary destructive tokens (avoid substring false positives like "from").
+_DESTRUCTIVE_RE = re.compile(
+    r"(?:^|[\s;&|])(?:rm|chmod)\s|"
+    r"(?:^|[\s;&|])>\s*/etc/",
+    re.IGNORECASE,
+)
+
+# Spawning a nested interactive agent / new console hijacks the session.
+_NESTED_AGENT_RE = re.compile(
+    r"(?:^|[\s;&|])(?:python|py)\s+(?:-m\s+)?(?:main\.py|harness\.cli)\b|"
+    r"\brun_cli\s*\(|"
+    r"(?:^|[\s;&|])start\s+cmd\b|"
+    r"os\.system\s*\(.*(?:start\s+cmd|run_cli)",
+    re.IGNORECASE,
+)
 
 
 def register_hook(event: str, callback) -> None:
@@ -38,11 +56,20 @@ def permission_hook(block):
         for pattern in DENY_LIST:
             if pattern in command:
                 return f"Permission denied: '{pattern}' is on the deny list"
-        if any(token in command for token in DESTRUCTIVE):
+        if _NESTED_AGENT_RE.search(command):
+            return (
+                "Permission denied: do not spawn a nested interactive agent "
+                "(python main.py / run_cli / start cmd). Run the user's target "
+                "script or service in-process with a finite command; if it needs "
+                "a separate terminal, tell the user the exact command to run."
+            )
+        if _DESTRUCTIVE_RE.search(command):
             print("\n\033[33m[permission] destructive command\033[0m")
             print(f"  {command}")
-            choice = input("  Allow? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
+            choice = ask_allow("  Allow? [y/N] ")
+            if choice is None:
+                return "Permission denied: cancelled by user"
+            if not choice:
                 return "Permission denied by user"
     if name in ("write_file", "edit_file"):
         path = tool_input.get("path", "")
@@ -56,8 +83,10 @@ def permission_hook(block):
             print(
                 f"\n\033[33m[permission] MCP destructive tool: {name}\033[0m"
             )
-            choice = input("  Allow? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
+            choice = ask_allow("  Allow? [y/N] ")
+            if choice is None:
+                return "Permission denied: cancelled by user"
+            if not choice:
                 return "Permission denied by user"
     return None
 
@@ -82,18 +111,31 @@ def large_output_hook(block, output):
 
 def user_prompt_hook(query: str):
     from harness.ui.tool_display import hooks_verbose
+    from harness.prompts.goal_stickiness import augment_if_needed
     from harness.prompts.lookup import augment_query as augment_lookup
     from harness.prompts.lookup import is_lookup_query
     from harness.prompts.writing import augment_query as augment_writing
     from harness.prompts.writing import is_writing_query
 
+    sticky = augment_if_needed(query)
+    if sticky is not None:
+        # Sticky augment can stack with lookup/writing when both apply.
+        base = sticky
+    else:
+        base = None
+
     if is_lookup_query(query):
         # Silent for the user: constraint is for the model only.
-        return augment_lookup(query)
+        looked = augment_lookup(query if base is None else base)
+        return looked if looked is not None else base
 
     if is_writing_query(query):
         # Silent for the user: workflow hint is for the model only.
-        return augment_writing(query)
+        written = augment_writing(query if base is None else base)
+        return written if written is not None else base
+
+    if base is not None:
+        return base
 
     if not hooks_verbose():
         return None
@@ -115,7 +157,7 @@ def stop_hook(messages: list):
                 for item in content
                 if isinstance(item, dict) and item.get("type") == "tool_result"
             )
-    print(f"\033[90m[HOOK] Stop: {tool_count} tool result(s)\033[0m")
+    print(f"\033[90m[HOOK] Stop: {tool_count} tool result(s) in session\033[0m")
     return None
 
 

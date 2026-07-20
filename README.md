@@ -39,7 +39,7 @@ cd learn-claude-code
 | MCP 双模式 | `RealMCPClient`（stdio）+ `MockMCPClient`；配置在 `config/mcp.json` |
 | MCP 权限元数据 | 用 `destructive` 等元数据驱动确认，而不是按名字硬匹配 |
 | 多模型 Provider | Anthropic + OpenAI 兼容路由；CLI `/model` 选择 |
-| RAG 检索 | `harness/rag/`：文档切块、索引、工具侧检索 |
+| 本地 RAG | hybrid BM25+向量、parent-child 切块、`/rag` CLI、`/mode file` 文档问答 | [rag](docs/rag.md) · [CHANGELOG-07-15](docs/CHANGELOG-2026-07-15.md) |
 
 ### 会话与任务（真实使用踩坑后）
 
@@ -47,27 +47,44 @@ cd learn-claude-code
 |------|------|------|
 | Resume OpenCode 模式 | 默认全新会话；`/clear` 一次清干净；`/resume N` 切换会话；续项目需 `/resume project` | [003](docs/bugs/003-resume-opt-in.md) |
 | Todo 持久化与提醒 | `sessions/<id>/todos.json`（跟会话）；每轮注入；reminder | [001](docs/bugs/001-todo-drift.md) · [003](docs/bugs/003-resume-opt-in.md) |
-| 工具空转护栏 | RepeatGuard；LookupGuard；WritingGuard + 本地 RAG 仿写 | [005](docs/bugs/005-tool-loop-drift.md) · [rag](docs/rag.md) |
+| 工具空转护栏 | RepeatGuard；LookupGuard；WritingGuard | [005](docs/bugs/005-tool-loop-drift.md) |
+| 任务落锚 | Resolve→Act→Close；GroundingGuard；禁 tool 参数写假设 | [005](docs/bugs/005-tool-loop-drift.md) · [07-15](docs/CHANGELOG-2026-07-15.md) |
 | 中断与回滚 | Esc / SIGINT 停当前轮；orphan `tool_use` 修复，避免 API 400 | [001](docs/bugs/001-todo-drift.md) |
 | Prompt 缓存分层 | static / dynamic / ephemeral 分离，提高 cache hit | [002](docs/bugs/002-prompt-cache-vs-dynamic-context.md) |
-| 上下文压缩 Phase 1 | compact 保留尾部；结构化摘要；micro_compact 落盘可恢复；时间默认分钟粒度 | [004](docs/bugs/004-context-compaction.md) |
-| Compact 输入预算 | 按模型上下文自适应；识别 DeepSeek `30720` 等超限错误 | — |
+| 上下文压缩 | compact 保留尾部；结构化摘要；micro_compact 落盘；按模型自适应预算 | [004](docs/bugs/004-context-compaction.md) |
 
 ### 交互与体验
 
 | 改进 | 说明 |
 |------|------|
 | 欢迎页 / Session 面板 | Rich UI，中文状态行 |
-| 模型 / 模式选择器 | 终端 ↑↓ 菜单 |
-| 中文 CLI 文案 | `/help`、`/resume`、`/clear` 等 |
-| 模式与子 Agent 配置 | `config/modes*.json`、`config/agents.json` |
-| 本地用量统计 | `.project/usage/` 按日流水；`/usage` 日/周/月/年 + 字符柱；提示符显示当前模型 |
+| 模型 / 模式选择器 | 终端 ↑↓ 菜单；`/mode` 含 direct / file / writing / lookup 等 |
+| 工具终端 UI | 只显示步骤 `›`/`●` + 回合末 Changed files；成功结果不刷屏 |
+| 中文 CLI 文案 | `/help`、`/resume`、`/clear`、`/rag` 等 |
+| 本地用量统计 | `.project/usage/`；`/usage`；提示符显示当前模型 |
+| 评测 | mini-eval / SWE-bench 接线 | [evals](docs/evals.md) |
 
-文档索引：[`docs/`](docs/README.md)（bugs 记录、changelog、评测说明）。  
-问题与取舍见 [`docs/bugs/`](docs/bugs/README.md)，按编号记录「现象 → 根因 → 改了什么」。
+文档索引：[`docs/`](docs/README.md)。问题与取舍见 [`docs/bugs/`](docs/bugs/README.md)。
 
-后续改什么不写死路线图——有新痛点再一起商量，改完补一条 bug 记录即可。
+相对上游的对照总览见下方「与上游 s20 的 diff」。后续改什么不写死路线图——有新痛点再商量，改完补 bug / changelog 即可。
 
+---
+
+## 与上游 s20 的 diff
+
+上游基线：`learn-claude-code/s20_comprehensive/code.py`（教学用单文件综合 Agent）。
+
+| 维度 | 上游 s20 | 本仓库 improved_harness |
+|------|----------|-------------------------|
+| 形态 | 约 2k 行单文件 | `harness/` 分包 + `tests/` + `docs/` |
+| 模型 | 偏 Anthropic | 多 provider（DeepSeek / Qwen / 智谱…）`/model` |
+| 会话 | 演示级 | session 分桶、todos 跟会话、`/resume` 切换删除 |
+| 压缩 | 基础 compact | 结构化摘要、落盘可恢复、模型预算、最新用户优先 |
+| 护栏 | 基本无 | Repeat / Lookup / Writing / Grounding |
+| 文档能力 | 无或极简 | 本地 RAG + file/writing 模式 + `/rag` |
+| 终端 | print 为主 | Rich；步骤 UI；用量；中断 |
+| Skills | 依赖教学仓布局 | 自带 `skills/`（含 paper-lookup 等） |
+| 工程化 | 教学演示 | changelog、bug 编号记录、evals |
 ---
 
 ## 目录结构
@@ -143,9 +160,9 @@ Changed files:
   · harness/loop.py
 ```
 
-默认只展示 **每一步在做什么**（意图 + 工具名/路径），成功结果不刷屏；完整 tool_result 仍进对话给模型。回合结束列出本轮 `write_file` / `edit_file` 改过的文件。错误与 Guard 拦截仍会显示 `→`。
+默认只展示 **每一步在做什么**（意图 + 工具名/路径），成功结果不刷屏；完整 tool_result 仍进对话给模型。回合结束列出本轮 `write_file` / `edit_file` 改过的文件。错误与 Guard 拦截仍会显示 `→`。每轮 LLM 的 cache hit/miss、compact 落盘路径默认不打印（避免盖住最终 Assistant 面板）；需要时设 `HARNESS_VERBOSE=1`。
 
-- `HARNESS_VERBOSE=1` 恢复 `[HOOK] …` 调试行
+- `HARNESS_VERBOSE=1` 恢复 `[HOOK]` / `[cache]` / `[compact] transcript` 调试行
 - 同一工具+相同参数连续调用满 3 次会被拦截（`HARNESS_REPEAT_LIMIT`），避免死循环刷屏
 - 查找题（lookup mode）联网 fetch 默认 ≤6 次（`HARNESS_LOOKUP_FETCH_LIMIT`）；连续 2 次无效结果会硬拦截（`HARNESS_LOOKUP_STALE_LIMIT`）
 

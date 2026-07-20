@@ -101,7 +101,10 @@ def build_session_context(
             "Latest user request — respond ONLY to this unless they explicitly "
             f"ask to continue another task:\n{latest}\n"
             f"Project root: {WORKDIR}\n"
-            "Python package path is `harness/` (there is no `src/harness/`)."
+            "Python package path is `harness/` (there is no `src/harness/`).\n"
+            "If this message answers a choice you offered, continue the pending "
+            "Working goal with that choice. Do not explore `harness/` or "
+            "`main.py` unless the user asked to change this agent runtime."
         )
 
     rag_boot = (context.get("rag_bootstrap") or "").strip()

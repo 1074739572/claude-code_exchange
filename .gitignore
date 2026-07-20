@@ -31,6 +31,12 @@ output/
 !requirements-eval.txt
 *.docx
 delivery/
+deliverables/
+python_uploads/
+
+# Copied third-party READMEs (not this harness)
+readme_eng.md
+readme_zh.md
 
 # Local scratch scripts (thesis/document exploration, not part of harness)
 _extract_*.py
@@ -48,3 +54,21 @@ verify_params.py
 test_ctf_unet.py
 test_done.flag
 test_output.log
+scripts/extract_ch7.py
+scripts/ch7.txt
+
+# Temp/scratch scripts and unrelated project artifacts at repo root
+check_log*.py
+patch_config*.py
+run_start.py
+update_config.py
+dbgpt_out*.log
+dbgpt_server.log
+dbgpt_config.txt
+bing_search.log
+startup_log.txt
+pyproject_vanna.toml
+readme_vanna.md
+docker-compose.yml
+my.ini
+temp_pdf*.txt

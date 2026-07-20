@@ -41,9 +41,11 @@ def _build_compacted(label: str, summary: str, messages: list) -> list:
 
 def compact_history(messages: list) -> list:
     from harness.project.session_store import record_compact_boundary
+    from harness.ui.tool_display import hooks_verbose
 
     transcript = write_transcript(messages)
-    print(f"  \033[36m[compact] transcript saved: {transcript}\033[0m")
+    if hooks_verbose():
+        print(f"  \033[36m[compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
     compacted = _build_compacted("Compacted", summary, messages)
     record_compact_boundary("auto", estimate_size(messages), transcript, compacted)
@@ -52,9 +54,11 @@ def compact_history(messages: list) -> list:
 
 def reactive_compact(messages: list) -> list:
     from harness.project.session_store import record_compact_boundary
+    from harness.ui.tool_display import hooks_verbose
 
     transcript = write_transcript(messages)
-    print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
+    if hooks_verbose():
+        print(f"  \033[31m[reactive compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages)
     compacted = _build_compacted("Reactive compact", summary, messages)
     record_compact_boundary("reactive", estimate_size(messages), transcript, compacted)

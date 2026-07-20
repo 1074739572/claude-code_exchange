@@ -187,6 +187,11 @@ def agent_loop(
                     }
                 )
                 continue
+            # Print final answer here so it is never lost if CLI post-loop
+            # work is interrupted or drowned by permission/encoding noise.
+            from harness.ui.final_answer import emit_final_assistant
+
+            emit_final_assistant(messages, response.content)
             trigger_hooks("Stop", messages)
             return _finish(False)
 
@@ -336,6 +341,10 @@ def agent_loop(
                         "content": str(blocked),
                     }
                 )
+                # Esc during Allow? [y/N] sets cancel — exit the turn now.
+                if is_cancelled():
+                    finalize_cancelled_tool_round(messages, response.content, results)
+                    return _finish(True)
                 continue
 
             if should_run_background(name, tool_input):

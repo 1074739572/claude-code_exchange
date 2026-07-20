@@ -18,18 +18,23 @@ def _format_llm_tag(profile) -> str:
 
 
 def _log_cache_usage(response, *, model_id: str) -> None:
+    """Persist usage; do not spam the terminal on every LLM round."""
+    from harness.ui.tool_display import hooks_verbose
+
     parsed = parse_cache_usage(getattr(response, "usage", None))
     if parsed is None:
+        return
+    try:
+        record_usage(model=model_id, cache=parsed)
+    except OSError as exc:
+        renderer.warn(f"usage ledger write failed: {exc}")
+    if not hooks_verbose():
         return
     rate = f"{100 * parsed.hit_rate:.0f}%"
     out_part = f" out={parsed.output_tokens}" if parsed.output_tokens is not None else ""
     renderer.muted(
         f"  [cache] hit={parsed.hit_tokens} miss={parsed.miss_tokens} ({rate}){out_part}"
     )
-    try:
-        record_usage(model=model_id, cache=parsed)
-    except OSError as exc:
-        renderer.warn(f"usage ledger write failed: {exc}")
 
 
 def create_message(

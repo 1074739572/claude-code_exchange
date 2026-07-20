@@ -21,6 +21,8 @@ def run_bash(
     cwd: Path | None = None,
     run_in_background: bool = False,
 ) -> str:
+    # Always decode as UTF-8 with replacement: Windows locale (GBK) otherwise
+    # crashes the stdout reader thread on non-GBK bytes (UnicodeDecodeError).
     try:
         result = subprocess.run(
             command,
@@ -28,6 +30,8 @@ def run_bash(
             cwd=cwd or WORKDIR,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
         out = (result.stdout + result.stderr).strip()

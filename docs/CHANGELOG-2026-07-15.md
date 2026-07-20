@@ -35,6 +35,7 @@
 | 仅错误 / Guard 显示 `→` | `is_failure_tool_output` |
 | 回合末 `Changed files:`（write/edit） | `harness/ui/turn_summary.py` · `loop.py` |
 | **删除** `HARNESS_TOOL_UI` compact/verbose/off 矩阵 | — |
+| 默认静默每轮 `[cache] hit=` / `[compact] transcript`（[006](./bugs/006-final-answer-buried.md)） | `llm.py` · `agent/compact/pipeline.py` |
 
 完整 tool_result **仍进对话给模型**，只是终端不刷。
 
@@ -53,8 +54,9 @@
 ### 4. 文档 / 测试
 
 - `docs/bugs/005-tool-loop-drift.md` — 补 grounding 根因与工具 UI 说明
+- `docs/bugs/006-final-answer-buried.md` — 终答看不见：A compact 后 turn_start 漏打；B cache/compact 刷屏掩盖
 - `README.md` — 工具展示说明更新
-- `tests/test_grounding.py` · `tests/test_tool_ui.py`
+- `tests/test_grounding.py` · `tests/test_tool_ui.py` · `tests/test_llm_cache_log.py`
 
 ---
 
@@ -101,4 +103,6 @@ skills/requirements-clarity/
 
 tests/test_grounding.py
 tests/test_tool_ui.py
+tests/test_llm_cache_log.py
+docs/bugs/006-final-answer-buried.md
 ```

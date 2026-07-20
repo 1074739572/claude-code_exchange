@@ -7,6 +7,18 @@ import sys
 import threading
 import time
 
+# When set, the background key poll yields so permission prompts can read y/n.
+_key_poll_paused = threading.Event()
+
+
+def pause_key_poll() -> None:
+    """Stop InterruptListener from consuming keystrokes (permission prompts)."""
+    _key_poll_paused.set()
+
+
+def resume_key_poll() -> None:
+    _key_poll_paused.clear()
+
 
 class InterruptListener:
     """Background poll for Esc or Ctrl+C during a blocking agent turn."""
@@ -32,6 +44,9 @@ class InterruptListener:
 
             def run() -> None:
                 while not self._stop.is_set():
+                    if _key_poll_paused.is_set():
+                        time.sleep(0.04)
+                        continue
                     if _poll_key_interrupt():
                         fire()
                         return
@@ -75,10 +90,15 @@ def _poll_interrupt_windows() -> bool:
     if not msvcrt.kbhit():
         return False
     ch = msvcrt.getch()
-    if ch == b"\x03":
+    if ch in (b"\x03", b"\x1b"):
         return True
-    if ch == b"\x1b":
-        return True
+    # Do not steal y/n/letters from a concurrent permission prompt: put back.
+    try:
+        msvcrt.ungetch(ch)
+    except OSError:
+        pass
+    # Brief yield so another reader (ask_allow) can consume the key.
+    time.sleep(0.12)
     return False
 
 

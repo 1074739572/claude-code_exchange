@@ -17,19 +17,23 @@
 | [003](./003-resume-opt-in.md) | Resume OpenCode 模式 | 已实施 | 默认全新；续项目要 `/resume project` |
 | [004](./004-context-compaction.md) | 上下文压缩丢信息 | Phase 1 + 最新 user 优先 | compact 留 tail + 结构化摘要 + tool 落盘；摘要不压过本条用户话 |
 | [005](./005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解 | LookupGuard 硬拦；micro_compact 防嵌套；MCP 超时温和返回 |
+| [006](./006-final-answer-buried.md) | 最终回答看不见 | 已缓解 | A：compact 后 turn_start 漏打；B：cache/compact 刷屏盖住；C：loop 内立即打印 |
+| [007](./007-permission-interrupt-gbk.md) | 权限卡住 / Esc / GBK | 已缓解 | Allow? 可取消；禁嵌套 agent；bash UTF-8 |
 
 相关能力（非 bug 单）：本地 `/usage` 用量统计；mini-eval（[evals.md](../evals.md)）；SWE-bench Lite（`python -m evals.swebench`）。
 
 ---
 
-## 四者怎么串起来
+## 关系怎么串起来
 
 ```text
 启动会话边界 ──► 003 Resume（默认不灌旧论文）
 每轮怎么拼 prompt ──► 002 缓存分层（static 稳、动态进 ephemeral）
 长了怎么压上下文 ──► 004 compact（摘要+tail+落盘+最新 user）
 模型跟不跟任务 ──► 001 偏移（todo / 话题 / 打断）
-工具空转 / 检索漂移 ──► 005（重复调用 · 手段取代目的 · 意图展示）
+工具空转 / 检索漂移 ──► 005（重复调用 · 手段取代目的 · 意图展示 · 跟进选择题走偏）
+终答看得见吗 ──► 006（漏打 / 刷屏 / loop 内打印）
+权限 / 打断卡死 ──► 007（Allow? + GBK）
 ```
 
 | 用户痛点 | 主要文档 | 004 有没有帮到 |
@@ -40,6 +44,9 @@
 | todo 表和进度不一致 | **001-A** | 几乎无（靠 todos.json + 注入） |
 | Ctrl+C 后 400 | **001-C** | 无关（靠 repair / undo） |
 | 同一 fetch 刷屏、搜着搜着偏题；**找到答案仍不停** | **005** | 间接（大结果易触发 compact；主因是循环与收口） |
+| **选模型/数据后跑去改 harness** | **005** | 无关（goal stickiness） |
+| **答完了但屏幕上看不见总结** | **006** | A 漏打 / B 刷屏 / C loop 打印 |
+| **Allow? 时 Esc 卡住 + GBK 崩** | **007** | 无关 |
 
 防偏移和省缓存**不是二选一**：动态内容放 ephemeral（002），模型仍看得见 todos（001）。
 
@@ -56,7 +63,9 @@
 | 默认全新会话 | `/clear` 全清；resume opt-in | 003 |
 | 压缩保真 | compact 留 5 条 tail；六段摘要；micro 落盘；时间分钟级；**最新 user 覆盖摘要旧目标**；`agent/compact/` 模块化 | 004 |
 | 用量可见 | `/usage` 日/周/月/年；提示符 `[model]` | （功能） |
-| 工具空转 | RepeatGuard；LookupGuard；micro_compact 防嵌套；MCP 超时温和返回；Lookup mode | 005 |
+| 工具空转 | RepeatGuard；LookupGuard；micro_compact 防嵌套；MCP 超时温和返回；lookup mode | 005 |
+| 终答可见 | A：`resolve_turn_start`；B：静默 cache/compact；C：loop 内 `emit_final_assistant` | 006 |
+| 权限/打断 | 可取消 Allow?；禁嵌套 agent；bash UTF-8 | 007 |
 
 ---
 

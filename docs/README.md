@@ -14,6 +14,7 @@
 | 问题编号与关联关系 | [bugs/README.md](./bugs/README.md) |
 | 本地能力回归怎么评 | [evals.md](./evals.md) |
 | 本地 RAG 仿写怎么接 | [rag.md](./rag.md) |
+| 工具注册 / 调用 / 权限 | [tools.md](./tools.md) |
 | 2026-07-07 大改总览 | [CHANGELOG-2026-07-07.md](./CHANGELOG-2026-07-07.md) |
 | 2026-07-12 会话 / lookup / 评测 | [CHANGELOG-2026-07-12.md](./CHANGELOG-2026-07-12.md) |
 | 2026-07-15 落锚 / 工具 UI / skills | [CHANGELOG-2026-07-15.md](./CHANGELOG-2026-07-15.md) |
@@ -31,8 +32,9 @@
 | [003](./bugs/003-resume-opt-in.md) | Resume OpenCode 模式 | 已实施 |
 | [004](./bugs/004-context-compaction.md) | 上下文压缩丢信息 | Phase 1 + 最新 user 优先 |
 | [005](./bugs/005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解（RepeatGuard · Lookup mode） |
+| [006](./bugs/006-final-answer-buried.md) | 最终回答看不见（漏打 · 刷屏） | 已缓解（turn_start + 静默诊断行） |
 
-五条线的关系见 [bugs/README.md](./bugs/README.md) 里的「四者怎么串起来」图。
+五条线的关系见 [bugs/README.md](./bugs/README.md) 里的关系图（含 006 终答可见）。
 
 ---
 

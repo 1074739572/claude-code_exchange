@@ -77,19 +77,9 @@ def _help_text() -> str:
 
 
 def _assistant_text_blocks(content) -> list[str]:
-    if isinstance(content, str):
-        return [content] if content else []
-    if not isinstance(content, list):
-        return [str(content)] if content else []
-    texts: list[str] = []
-    for block in content:
-        if isinstance(block, dict):
-            if block.get("type") == "text" and block.get("text"):
-                texts.append(block["text"])
-            continue
-        if getattr(block, "type", None) == "text" and getattr(block, "text", None):
-            texts.append(block.text)
-    return texts
+    from harness.ui.final_answer import assistant_text_blocks
+
+    return assistant_text_blocks(content)
 
 
 def print_turn_assistants(messages: list, turn_start: int | None) -> None:
@@ -99,6 +89,9 @@ def print_turn_assistants(messages: list, turn_start: int | None) -> None:
     pre-turn ``turn_start`` index. Resolve to the latest real user turn so the
     final answer is still printed (otherwise the UI looks blank even though the
     model already replied into history).
+
+    Prefer the in-loop ``emit_final_assistant`` path; this is a safety net for
+    callers that do not go through that path (and skips already-printed msgs).
     """
     from harness.project.session_undo import resolve_turn_start
 
@@ -107,6 +100,8 @@ def print_turn_assistants(messages: list, turn_start: int | None) -> None:
         return
     for msg in messages[resolved:]:
         if msg.get("role") != "assistant":
+            continue
+        if msg.get("_ui_final_printed"):
             continue
         content = msg.get("content")
         # Tool rounds: intent text was already shown via renderer.tool_intent during the loop.
@@ -276,7 +271,7 @@ def run_cli() -> None:
         if query.strip().lower().startswith("/import-transcript"):
             parts = query.strip().split(maxsplit=2)
             mode = "summary"
-            path = ""
+            path_arg = ""
             if len(parts) > 1:
                 arg = parts[1]
                 if arg.lower() == "full":
@@ -284,11 +279,13 @@ def run_cli() -> None:
                 elif arg.lower() == "merge":
                     mode = "summary"
                 else:
-                    path = arg
+                    path_arg = arg
             if len(parts) > 2 and parts[2].lower() == "full":
                 mode = "full"
             merge = "merge" in query.lower()
-            renderer.plain(run_project_import_transcript(path=path, mode=mode, merge=merge))
+            renderer.plain(
+                run_project_import_transcript(path=path_arg, mode=mode, merge=merge)
+            )
             history[:] = bootstrap_session()[0]
             context = update_context(context, history)
             print()
@@ -366,6 +363,7 @@ def run_cli() -> None:
 
         inbox = consume_lead_inbox(route_protocol=True)
         if inbox:
+
             def inbox_label(msg: dict) -> str:
                 req_id = msg.get("metadata", {}).get("request_id", "")
                 suffix = f" req:{req_id}" if req_id else ""

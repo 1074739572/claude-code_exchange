@@ -20,13 +20,13 @@ def case_bash_deny_list() -> None:
 
 
 def case_bash_destructive_confirm_no() -> None:
-    with mock.patch("builtins.input", return_value="n"):
+    with mock.patch("harness.hooks.ask_allow", return_value=False):
         denied = permission_hook(_block("bash", {"command": "rm -rf ./tmp_build"}))
     assert denied and "Permission denied by user" in denied, denied
 
 
 def case_bash_destructive_confirm_yes() -> None:
-    with mock.patch("builtins.input", return_value="y"):
+    with mock.patch("harness.hooks.ask_allow", return_value=True):
         allowed = permission_hook(_block("bash", {"command": "rm ./old.txt"}))
     assert allowed is None, allowed
 
@@ -58,7 +58,7 @@ def case_mcp_destructive_confirm() -> None:
     name = "mcp__deploy__deploy_app"
     mcp_tool_meta[name] = {"destructive": True, "server": "deploy", "tool": "deploy_app"}
     try:
-        with mock.patch("builtins.input", return_value="n"):
+        with mock.patch("harness.hooks.ask_allow", return_value=False):
             denied = permission_hook(_block(name, {"env": "prod"}))
         assert denied and "Permission denied by user" in denied, denied
     finally:

@@ -268,3 +268,28 @@ Harness 只需：**有 text 就展示；没有也不拦工具。**
 **长检索空转 = 重复工具调用 + 目标被手段绑架 + 大结果引发反复 compact；终端复读是症状。**  
 **已找到仍不停**（Pu Keyang 案例）= 缺任务完成判定 + 子目标（链接/单位）压过用户要的「有/没有」。  
 展示「为什么调工具」= 把同轮已有 `text` 给人看，**不是**让模型重写工具调用协议。
+
+---
+
+## 2026-07-16 补充：跟进选择题后跑去改 harness（Vanna）
+
+### 现象
+
+用户要配置/运行 **Vanna**（或 `deepseek_mysql.py`）。Agent 问模型与数据；用户回答后，它去读本仓库 `main.py` / `harness/cli.py`，甚至 `start cmd` 开嵌套 CLI。用户纠正「我让你运行 vanna」仍继续偏航。
+
+### 根因
+
+| 层 | 机制 |
+|----|------|
+| Prompt | 「Working directory = 本 harness」被当成任务对象 |
+| 跟进 | 短回复（模型名/路径）未锚定「仍是上一问」 |
+| 工具 | 允许嵌套 `python main.py` / `start cmd` |
+
+### 已改
+
+| 项 | 行为 |
+|----|------|
+| identity / grounding | 写明 harness ≠ 用户产品；跟进短答接到 pending goal |
+| `goal_stickiness` | 纠正句 / 槽位短答注入硬约束 |
+| ephemeral `latest_user_query` | 提醒勿无故探索 `harness/` |
+| permission | 直接拒绝嵌套 interactive agent（见 [007](./007-permission-interrupt-gbk.md)） |
