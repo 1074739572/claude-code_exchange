@@ -24,6 +24,17 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Preview all welcome banner styles (classic, emoji, typewriter, shadow3d)",
     )
+    ui = parser.add_mutually_exclusive_group()
+    ui.add_argument(
+        "--classic",
+        action="store_true",
+        help="Use classic Rich line CLI (also: HARNESS_TUI=0)",
+    )
+    ui.add_argument(
+        "--tui",
+        action="store_true",
+        help="Force Textual TUI (default when textual is installed)",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     rag_parser = subparsers.add_parser(
@@ -117,5 +128,19 @@ if __name__ == "__main__":
         raise SystemExit(_run_rag_command(args))
 
     from harness.cli import run_cli
+    from harness.ui.tui import prefer_tui, run_tui
 
-    run_cli()
+    use_classic = bool(args.classic) or not prefer_tui()
+    if args.tui:
+        use_classic = False
+
+    if use_classic:
+        run_cli()
+        raise SystemExit(0)
+
+    try:
+        run_tui()
+    except ImportError as exc:
+        print(str(exc), file=sys.stderr)
+        print("Falling back to classic CLI…", file=sys.stderr)
+        run_cli()

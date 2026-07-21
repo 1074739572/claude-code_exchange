@@ -19,6 +19,7 @@
 | [005](./005-tool-loop-drift.md) | 工具空转与目标漂移 | 部分缓解 | LookupGuard 硬拦；micro_compact 防嵌套；MCP 超时温和返回 |
 | [006](./006-final-answer-buried.md) | 最终回答看不见 | 已缓解 | A：compact 后 turn_start 漏打；B：cache/compact 刷屏盖住；C：loop 内立即打印 |
 | [007](./007-permission-interrupt-gbk.md) | 权限卡住 / Esc / GBK | 已缓解 | Allow? 可取消；禁嵌套 agent；bash UTF-8 |
+| [008](./008-textual-tui-m1.md) | Textual TUI M1 | 已落地 | 默认 4 区 TUI；`--classic` 回退 |
 
 相关能力（非 bug 单）：本地 `/usage` 用量统计；mini-eval（[evals.md](../evals.md)）；SWE-bench Lite（`python -m evals.swebench`）。
 
@@ -34,6 +35,7 @@
 工具空转 / 检索漂移 ──► 005（重复调用 · 手段取代目的 · 意图展示 · 跟进选择题走偏）
 终答看得见吗 ──► 006（漏打 / 刷屏 / loop 内打印）
 权限 / 打断卡死 ──► 007（Allow? + GBK）
+默认交互壳 ──► 008（Textual TUI · --classic）
 ```
 
 | 用户痛点 | 主要文档 | 004 有没有帮到 |
@@ -47,6 +49,7 @@
 | **选模型/数据后跑去改 harness** | **005** | 无关（goal stickiness） |
 | **答完了但屏幕上看不见总结** | **006** | A 漏打 / B 刷屏 / C loop 打印 |
 | **Allow? 时 Esc 卡住 + GBK 崩** | **007** | 无关 |
+| **想要分区 TUI（步骤/终答/输入）** | **008** | 无关 |
 
 防偏移和省缓存**不是二选一**：动态内容放 ephemeral（002），模型仍看得见 todos（001）。
 

@@ -7,7 +7,8 @@ from harness.modes.registry import get_mode_profile, list_mode_ids
 from harness.ui.terminal_menu import is_interactive_tty, select_from_list
 
 
-def _menu_entries() -> tuple[list[str], list[str], int]:
+def menu_entries() -> tuple[list[str], list[str], int]:
+    """Labels, mode ids, and initial cursor for pickers (CLI + TUI)."""
     labels: list[str] = []
     mode_ids: list[str] = []
     current = get_mode()
@@ -26,13 +27,17 @@ def _menu_entries() -> tuple[list[str], list[str], int]:
     return labels, mode_ids, cursor
 
 
+def _menu_entries() -> tuple[list[str], list[str], int]:
+    return menu_entries()
+
+
 def run_mode_picker() -> str:
     if not is_interactive_tty():
         from harness.modes.registry import format_mode_catalog
 
         return format_mode_catalog()
 
-    labels, mode_ids, cursor = _menu_entries()
+    labels, mode_ids, cursor = menu_entries()
     if not mode_ids:
         return "No modes in config/modes.json"
 

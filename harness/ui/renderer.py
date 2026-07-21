@@ -1,4 +1,8 @@
-"""Unified terminal rendering (Rich) with plain-text fallback."""
+"""Unified terminal rendering (Rich) with plain-text fallback.
+
+When the Textual TUI is active (O1), all output goes exclusively to the TUI
+bridge — no Rich dual-write.
+"""
 
 from __future__ import annotations
 
@@ -26,10 +30,52 @@ except ImportError:
 _console = Console(highlight=False, legacy_windows=False) if _RICH else None
 
 
+def _tui_bridge():
+    from harness.ui.tui.mode import is_tui_active, is_tui_shutdown
+
+    if is_tui_active():
+        from harness.ui.tui.bridge import BRIDGE
+
+        return BRIDGE
+    # Quitting TUI while worker still runs: never fall through to Rich console.
+    if is_tui_shutdown():
+        return _SHUTDOWN_SINK
+    return None
+
+
+class _ShutdownSink:
+    """No-op sink used while TUI is shutting down (X1)."""
+
+    def push_step(self, line: str) -> None:
+        return None
+
+    def push_final(self, text: str) -> None:
+        return None
+
+    def push_warn(self, text: str) -> None:
+        return None
+
+    def push_status(self, text: str) -> None:
+        return None
+
+    def set_busy(self, busy: bool) -> None:
+        return None
+
+    def reset_turn(self, user_query: str = "", model: str = "") -> None:
+        return None
+
+
+_SHUTDOWN_SINK = _ShutdownSink()
+
+
 class Renderer:
-    """Single entry for CLI output; keeps loop/llm/cli free of ad-hoc prints."""
+    """Single entry for CLI/TUI output; keeps loop/llm free of ad-hoc prints."""
 
     def _write(self, text: str, *, style: str | None = None, end: str = "\n") -> None:
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_step(str(text).rstrip("\n") if end == "\n" else str(text))
+            return
         if not _RICH or _console is None:
             print(text, end=end, flush=True)
             return
@@ -58,9 +104,17 @@ class Renderer:
         self._write(message, style=theme.MUTED)
 
     def warn(self, message: str) -> None:
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_warn(message)
+            return
         self._write(message, style=theme.WARN)
 
     def error(self, message: str) -> None:
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_warn(message)
+            return
         self._write(message, style=theme.ERROR)
 
     def hook(self, label: str, detail: str = "") -> None:
@@ -70,6 +124,9 @@ class Renderer:
         self._write(f"[hook] {label}{suffix}", style=theme.HOOK)
 
     def user(self, text: str) -> None:
+        if _tui_bridge() is not None:
+            # TUI already shows the query in Steps via reset_turn.
+            return
         if _RICH:
             self._write("")
             self._write(f"{theme.PROMPT}{text}", style=theme.USER)
@@ -78,6 +135,10 @@ class Renderer:
 
     def assistant(self, text: str) -> None:
         if not text:
+            return
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_final(text)
             return
         if _RICH and _console is not None:
             self._write("")
@@ -152,6 +213,12 @@ class Renderer:
     def todo_checklist(self, todos: list[dict[str, str]]) -> None:
         if not todos:
             return
+        bridge = _tui_bridge()
+        if bridge is not None:
+            from harness.ui.todos import _plain_checklist
+
+            bridge.push_step(_plain_checklist(todos))
+            return
         if _RICH and _console is not None:
             from harness.ui.todos import render_todo_checklist
 
@@ -164,6 +231,14 @@ class Renderer:
     @contextmanager
     def llm_busy(self, model_tag: str):
         label = f"Thinking  {model_tag}"
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_status(label)
+            try:
+                yield
+            finally:
+                bridge.push_status("Running… (Esc to stop)")
+            return
         if _RICH and _console is not None:
             with _console.status(f"[{theme.ACCENT}]{label}[/{theme.ACCENT}]", spinner="dots"):
                 yield

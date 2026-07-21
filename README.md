@@ -60,6 +60,7 @@ cd learn-claude-code
 | 欢迎页 / Session 面板 | Rich UI，中文状态行 |
 | 模型 / 模式选择器 | 终端 ↑↓ 菜单；`/mode` 含 direct / file / writing / lookup 等 |
 | 工具终端 UI | 只显示步骤 `›`/`●` + 回合末 Changed files；成功结果不刷屏 |
+| **Textual TUI（默认）** | 固定 4 区 Header/Steps/Answer/Prompt；`--classic` 回退 Rich CLI | [008](docs/bugs/008-textual-tui-m1.md) |
 | 中文 CLI 文案 | `/help`、`/resume`、`/clear`、`/rag` 等 |
 | 本地用量统计 | `.project/usage/`；`/usage`；提示符显示当前模型 |
 | 评测 | mini-eval / SWE-bench 接线 | [evals](docs/evals.md) |
@@ -145,12 +146,19 @@ improved_harness/
 cd improved_harness
 cp .env.example .env          # 填入 API Key 与 MODEL_ID
 pip install -r requirements.txt
-python main.py
+python main.py                # 默认 Textual TUI
+python main.py --classic      # 经典 Rich 行模式
 ```
 
 在**你的工作区目录**（cwd）跑 Agent；skills 从本包 `skills/` 加载；会话与任务状态写在 cwd 下的 `.project/` 等目录。
 
-常用命令：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/usage`、`/rag`、`/clear`、`/resume`。
+TUI：顶栏 **今日/周用量**；Chat 顶部 **欢迎页**（hero + 每日一句 + 会话摘要）再接历史；聊天下方 **🤖模型 / 🧭模式 / 状态**（可点选）；底部输入。`HARNESS_TUI=0` 等同 `--classic`。
+
+每日一句：本地队列 `.project/daily_quotes.json`（Hitokoto）；不足 5 条启动后后台补货。手动：`python -m harness.ui.tui.quotes refill`。
+
+TUI 内置：`/model`、`/mode`、`/help`、`/quit`。其余斜杠（`/rag`、`/resume`…）仍可用 `--classic`。
+
+常用命令（classic 全量）：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/usage`、`/rag`、`/clear`、`/resume`。
 
 ```text
 › Working goal: 修好 lookup 死循环

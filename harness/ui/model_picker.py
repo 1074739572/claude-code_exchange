@@ -7,7 +7,8 @@ from harness.providers.config import get_provider, provider_key_status
 from harness.ui.terminal_menu import is_interactive_tty, select_from_list
 
 
-def _menu_entries() -> tuple[list[str], list[str], int]:
+def menu_entries() -> tuple[list[str], list[str], int]:
+    """Labels, model ids, and initial cursor index for pickers (CLI + TUI)."""
     current = get_model()
     key_status = provider_key_status()
     labels: list[str] = []
@@ -36,12 +37,16 @@ def _menu_entries() -> tuple[list[str], list[str], int]:
     return labels, model_ids, cursor_index
 
 
+def _menu_entries() -> tuple[list[str], list[str], int]:
+    return menu_entries()
+
+
 def run_model_picker() -> str:
     """Show model list; use arrow keys + Enter when in an interactive terminal."""
     if not is_interactive_tty():
         return format_model_list() + "\n\nSwitch with: /model <id>"
 
-    labels, model_ids, cursor_index = _menu_entries()
+    labels, model_ids, cursor_index = menu_entries()
     if not model_ids:
         return "No models configured in config/models.json"
 

@@ -134,8 +134,14 @@ def cron_autorun_loop(history: list, context: dict) -> None:
             checkpoint_history(history)
 
 
-def run_cli() -> None:
-    terminal_state.CLI_ACTIVE = True
+def bootstrap_cli_session(
+    *,
+    welcome: bool = True,
+    start_cron: bool = True,
+    cli_active: bool = True,
+) -> tuple[list, dict]:
+    """Shared session bootstrap for classic CLI and Textual TUI."""
+    terminal_state.CLI_ACTIVE = cli_active
 
     history, session_source = bootstrap_session()
     load_todos_from_disk()
@@ -149,13 +155,16 @@ def run_cli() -> None:
         checkpoint_history(history)
         renderer.warn(f"Repaired {repair_fixes} broken tool message(s) in saved session.")
     context = update_context({}, history if history else [])
+    if session_source:
+        context["session_source"] = session_source
 
-    render_welcome(session_source=session_source)
+    if welcome:
+        render_welcome(session_source=session_source)
 
-    banner = resume_banner()
-    if banner:
-        renderer.plain(banner)
-        print()
+        banner = resume_banner()
+        if banner:
+            renderer.plain(banner)
+            print()
 
     if should_auto_inject_project_on_startup():
         ok, note = inject_project_context(history, checkpoint=True)
@@ -166,9 +175,15 @@ def run_cli() -> None:
     bootstrap_results = bootstrap_mcp_servers()
     for line in mcp_bootstrap_warnings(bootstrap_results):
         renderer.warn(line)
-    threading.Thread(
-        target=cron_autorun_loop, args=(history, context), daemon=True
-    ).start()
+    if start_cron:
+        threading.Thread(
+            target=cron_autorun_loop, args=(history, context), daemon=True
+        ).start()
+    return history, context
+
+
+def run_cli() -> None:
+    history, context = bootstrap_cli_session()
 
     redo_query: str | None = None
 

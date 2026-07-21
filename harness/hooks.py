@@ -48,6 +48,24 @@ def trigger_hooks(event: str, *args):
     return None
 
 
+def _hook_print(message: str, *, warn: bool = False) -> None:
+    """Route hook notices to TUI Steps when active; else classic stdout."""
+    from harness.ui.tui.mode import is_tui_active
+
+    if is_tui_active():
+        from harness.ui.tui.bridge import BRIDGE
+
+        if warn:
+            BRIDGE.push_warn(message)
+        else:
+            BRIDGE.push_step(message)
+        return
+    if warn:
+        print(f"\n\033[33m{message}\033[0m")
+    else:
+        print(f"\033[90m{message}\033[0m" if message.startswith("[HOOK]") else message)
+
+
 def permission_hook(block):
     name = block_field(block, "name", "")
     tool_input = block_field(block, "input", {}) or {}
@@ -64,9 +82,13 @@ def permission_hook(block):
                 "a separate terminal, tell the user the exact command to run."
             )
         if _DESTRUCTIVE_RE.search(command):
-            print("\n\033[33m[permission] destructive command\033[0m")
-            print(f"  {command}")
-            choice = ask_allow("  Allow? [y/N] ")
+            _hook_print("[permission] destructive command", warn=True)
+            _hook_print(f"  {command}")
+            choice = ask_allow(
+                "  Allow? [y/N] ",
+                detail=command,
+                title="Allow destructive command?",
+            )
             if choice is None:
                 return "Permission denied: cancelled by user"
             if not choice:
@@ -80,10 +102,12 @@ def permission_hook(block):
     if name.startswith("mcp__"):
         meta = mcp_tool_meta.get(name, {})
         if meta.get("destructive"):
-            print(
-                f"\n\033[33m[permission] MCP destructive tool: {name}\033[0m"
+            _hook_print(f"[permission] MCP destructive tool: {name}", warn=True)
+            choice = ask_allow(
+                "  Allow? [y/N] ",
+                detail=name,
+                title="Allow MCP destructive tool?",
             )
-            choice = ask_allow("  Allow? [y/N] ")
             if choice is None:
                 return "Permission denied: cancelled by user"
             if not choice:
@@ -96,15 +120,16 @@ def log_hook(block):
 
     if not hooks_verbose():
         return None
-    print(f"\033[90m[HOOK] {block_field(block, 'name', '')}\033[0m")
+    _hook_print(f"[HOOK] {block_field(block, 'name', '')}")
     return None
 
 
 def large_output_hook(block, output):
     if len(str(output)) > 100000:
-        print(
-            f"\033[33m[HOOK] large output from {block_field(block, 'name', '')}: "
-            f"{len(str(output))} chars\033[0m"
+        _hook_print(
+            f"[HOOK] large output from {block_field(block, 'name', '')}: "
+            f"{len(str(output))} chars",
+            warn=True,
         )
     return None
 
@@ -139,7 +164,7 @@ def user_prompt_hook(query: str):
 
     if not hooks_verbose():
         return None
-    print(f"\033[90m[HOOK] UserPromptSubmit: {WORKDIR}\033[0m")
+    _hook_print(f"[HOOK] UserPromptSubmit: {WORKDIR}")
     return None
 
 
@@ -157,7 +182,7 @@ def stop_hook(messages: list):
                 for item in content
                 if isinstance(item, dict) and item.get("type") == "tool_result"
             )
-    print(f"\033[90m[HOOK] Stop: {tool_count} tool result(s) in session\033[0m")
+    _hook_print(f"[HOOK] Stop: {tool_count} tool result(s) in session")
     return None
 
 

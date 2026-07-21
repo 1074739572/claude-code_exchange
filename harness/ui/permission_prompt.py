@@ -1,4 +1,7 @@
-"""Cancel-aware Allow? [y/N] prompts (Esc / Ctrl+C must not leave input() stuck)."""
+"""Cancel-aware Allow? [y/N] prompts (Esc / Ctrl+C must not leave input() stuck).
+
+When Textual TUI is active, the prompt is a Modal owned by the App (P1).
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,12 @@ from harness.agent.cancel import is_cancelled, request_cancel
 from harness.ui.interrupt_listener import pause_key_poll, resume_key_poll
 
 
-def ask_allow(prompt: str = "  Allow? [y/N] ") -> bool | None:
+def ask_allow(
+    prompt: str = "  Allow? [y/N] ",
+    *,
+    detail: str | None = None,
+    title: str | None = None,
+) -> bool | None:
     """Ask y/N without blocking forever under Esc/Ctrl+C.
 
     Returns:
@@ -17,6 +25,17 @@ def ask_allow(prompt: str = "  Allow? [y/N] ") -> bool | None:
         False — deny (n / Enter / default)
         None  — cancelled (Esc, Ctrl+C, or cooperative cancel flag)
     """
+    from harness.ui.tui.mode import is_tui_active
+
+    if is_tui_active():
+        from harness.ui.tui.bridge import BRIDGE
+
+        body = (detail if detail is not None else prompt).strip()
+        return BRIDGE.ask_allow(
+            body or "(no detail)",
+            title=title or "Allow destructive command?",
+        )
+
     print(prompt, end="", flush=True)
     pause_key_poll()
     try:
