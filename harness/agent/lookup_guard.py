@@ -132,18 +132,18 @@ class LookupGuard:
 
     def _budget_message(self) -> str:
         return (
-            f"[LookupGuard] Blocked: lookup mode allows at most {self.max_fetches} "
-            f"web fetch calls per user turn ({self.fetch_count} already used). "
-            "Stop fetching. Answer the user now: say 有/没有 (or found/not found), "
-            "cite what you already have, and note blocked sources briefly."
+            f"[LookupGuard] Blocked: at most {self.max_fetches} web tool calls "
+            f"per turn ({self.fetch_count} already used: web_search/fetch/browser). "
+            "Stop fetching. Answer NOW with what you already have "
+            "(prefer `FINAL ANSWER: ...` if that format was requested)."
         )
 
     def _stale_message(self) -> str:
         return (
-            f"[LookupGuard] Blocked: {self.consecutive_stale} consecutive fetch "
-            "results had no useful new information (errors, robots, empty shells). "
-            "Do NOT try another URL. Answer the user now with 公开检索未找到 or "
-            "partial findings from earlier successful results."
+            f"[LookupGuard] Blocked: {self.consecutive_stale} consecutive web calls "
+            "returned no useful new information (errors, robots, empty shells). "
+            "Do NOT try another URL/query. Answer NOW with partial findings "
+            "(prefer `FINAL ANSWER: ...` if that format was requested)."
         )
 
     def _host_block_message(self, host: str) -> str:

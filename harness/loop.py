@@ -85,7 +85,10 @@ def agent_loop(
     llm_rounds = 0
     repeat_guard = RepeatGuard()
     grounding_guard = GroundingGuard()
-    lookup_guard = LookupGuard(active=bool(context.get("lookup_mode")))
+    # lookup_mode (CLI) or web_budget (e.g. GAIA eval) both enable fetch caps
+    lookup_guard = LookupGuard(
+        active=bool(context.get("lookup_mode") or context.get("web_budget"))
+    )
     writing_guard = WritingGuard(active=bool(context.get("writing_mode")))
     mutations = TurnMutationTracker()
 

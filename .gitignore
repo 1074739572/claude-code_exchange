@@ -22,6 +22,9 @@ venv/
 evals/results/
 evals/swebench/fixtures/*.parquet
 
+# Downloaded GAIA benchmark data (~100MB + attachments)
+test/gaia_dataset/
+
 # Local reference corpus (large docx etc.)
 files/
 

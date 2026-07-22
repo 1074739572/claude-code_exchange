@@ -63,7 +63,7 @@ cd learn-claude-code
 | **Textual TUI（默认）** | 固定 4 区 Header/Steps/Answer/Prompt；`--classic` 回退 Rich CLI | [008](docs/bugs/008-textual-tui-m1.md) |
 | 中文 CLI 文案 | `/help`、`/resume`、`/clear`、`/rag` 等 |
 | 本地用量统计 | `.project/usage/`；`/usage`；提示符显示当前模型 |
-| 评测 | mini-eval / SWE-bench 接线 | [evals](docs/evals.md) |
+| 评测 | mini-eval / SWE-bench / GAIA validation | [evals](docs/evals.md) |
 
 文档索引：[`docs/`](docs/README.md)。问题与取舍见 [`docs/bugs/`](docs/bugs/README.md)。
 
@@ -100,7 +100,7 @@ improved_harness/
 ├── tests/                  # 单元测试
 ├── docs/
 │   ├── README.md           # 文档索引
-│   ├── evals.md            # mini-eval / SWE-bench 说明
+│   ├── evals.md            # mini-eval / SWE-bench / GAIA 说明
 │   ├── bugs/               # 问题与改进记录（001–005…）
 │   └── CHANGELOG-*.md      # 阶段性改动总览
 ├── scripts/                # 实验与文档构建脚本
@@ -176,7 +176,7 @@ Changed files:
 
 提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
 
-## 评测（mini-eval / SWE-bench）
+## 评测（mini-eval / SWE-bench / GAIA）
 
 本地能力回归（评 harness 接线，不评「聪不聪明」）：
 
@@ -191,6 +191,14 @@ SWE-bench Lite（克隆仓库 → 跑本 harness → 产出 patch）：
 pip install -r requirements-eval.txt
 python -m evals.swebench --limit 1
 python -m evals.swebench --limit 1 --eval   # 需 Docker Desktop；官方 resolve 打分
+```
+
+GAIA validation（有标准答案；官方 quasi-exact match）：
+
+```sh
+python -m evals.gaia --download --validation-only
+python -m evals.gaia --limit 3
+python -m evals.gaia --level 1 --limit 10
 ```
 
 结果在 `evals/results/`。说明见 [docs/evals.md](docs/evals.md)。
