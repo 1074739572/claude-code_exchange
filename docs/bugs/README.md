@@ -20,6 +20,9 @@
 | [006](./006-final-answer-buried.md) | 最终回答看不见 | 已缓解 | A：compact 后 turn_start 漏打；B：cache/compact 刷屏盖住；C：loop 内立即打印 |
 | [007](./007-permission-interrupt-gbk.md) | 权限卡住 / Esc / GBK | 已缓解 | Allow? 可取消；禁嵌套 agent；bash UTF-8 |
 | [008](./008-textual-tui-m1.md) | Textual TUI M1 | 已落地 | 默认 4 区 TUI；`--classic` 回退 |
+| [009](./009-compact-empty-summary.md) | Compact 空摘要失忆 | 已修复 | 推理模型摘要在 thinking 块；extract 只读 text → `(empty summary)` |
+| [010](./010-lookup-guard-calibration.md) | LookupGuard 校准 | 已修复 | 硬失败不烧全局 stale；连续 block 强制收口 + 禁 memory |
+| [011](./011-autocompact-token-threshold.md) | Auto-compact 过早 | 已修复 | 50KB 字符硬限 → `0.835×context_window`（token） |
 
 相关能力（非 bug 单）：本地 `/usage` 用量统计；mini-eval（[evals.md](../evals.md)）；SWE-bench Lite（`python -m evals.swebench`）。
 
@@ -31,8 +34,11 @@
 启动会话边界 ──► 003 Resume（默认不灌旧论文）
 每轮怎么拼 prompt ──► 002 缓存分层（static 稳、动态进 ephemeral）
 长了怎么压上下文 ──► 004 compact（摘要+tail+落盘+最新 user）
+                   ├► 009 空摘要（thinking 回退 + 不可用则降级，勿失忆）
+                   └► 011 阈值（`0.835×window` token，勿 50KB 字符硬砍）
 模型跟不跟任务 ──► 001 偏移（todo / 话题 / 打断）
 工具空转 / 检索漂移 ──► 005（重复调用 · 手段取代目的 · 意图展示 · 跟进选择题走偏）
+                   └► 010 LookupGuard（硬失败≠全局 stale；block 升级强制答）
 终答看得见吗 ──► 006（漏打 / 刷屏 / loop 内打印）
 权限 / 打断卡死 ──► 007（Allow? + GBK）
 默认交互壳 ──► 008（Textual TUI · --classic）
@@ -65,8 +71,11 @@
 | 缓存分层 | static / dynamic / ephemeral + `if_unchanged` | 002 |
 | 默认全新会话 | `/clear` 全清；resume opt-in | 003 |
 | 压缩保真 | compact 留 5 条 tail；六段摘要；micro 落盘；时间分钟级；**最新 user 覆盖摘要旧目标**；`agent/compact/` 模块化 | 004 |
+| Auto-compact 阈值 | `estimate_tokens ≳ 0.835×context_window`（对齐 Claude Code）；`models.json` 写窗口 | 011 |
+| 空摘要 | thinking 回退 + 不可用则降级，禁止 `(empty summary)` 失忆 | 009 |
 | 用量可见 | `/usage` 日/周/月/年；提示符 `[model]` | （功能） |
 | 工具空转 | RepeatGuard；LookupGuard；micro_compact 防嵌套；MCP 超时温和返回；lookup mode | 005 |
+| Lookup 校准 | hard/soft 分维；连续 block → strip tools + FORCE_ANSWER；证据≠记忆 | 010 |
 | 终答可见 | A：`resolve_turn_start`；B：静默 cache/compact；C：loop 内 `emit_final_assistant` | 006 |
 | 权限/打断 | 可取消 Allow?；禁嵌套 agent；bash UTF-8 | 007 |
 
@@ -79,7 +88,7 @@
 | 候选 | 痛点 | 大致做法 | 关联 |
 |------|------|----------|------|
 | ~~① compact 不压过最新用户话~~ | ~~摘要里旧目标绑架本轮~~ | **已做**：compact 末尾强制 `[Current user request]` | 001-B、004 |
-| **② snip / 预热压缩** | >50 条硬切；只靠 50KB 才 compact | 语义边界 snip；或 soft limit 提前瘦身 | 004 |
+| ~~② snip / 50KB 过早 compact~~ | ~~字符硬限过早压~~ | **已做**：`0.835×window` token 阈值 | 011 · 004 |
 | **③ 解释模式** | 问「为什么偏移」仍去改文件 | 检测 meta 问句 → 本轮禁 write/edit | 001-B |
 | **④ 多 agent 隔离** | 同 cwd 共享 `.project/` | worktree 约定或 `HARNESS_PROJECT_DIR` | 003 |
 | **⑤ memory 写回** | 用户纠正不进 `.memory/` | compact/纠正时 append constraints | 004 |

@@ -24,7 +24,8 @@
 - 重复已做过的步骤，或跳到无关任务
 - 对已读过的 docx / 大段 tool 输出答「没有上下文」
 
-用户侧常见触发：对话超过 `CONTEXT_LIMIT`（50KB JSON）后触发 `compact_history`，或 `micro_compact` 把旧 tool 结果直接替换成一句占位符。
+用户侧常见触发：对话估算 token 超过 `≈0.835 × context_window` 后触发 `compact_history`，或 `micro_compact` 把旧 tool 结果替换成可召回落盘引用。
+（旧行为：固定 50KB 字符硬限，web 任务过早压缩。）
 
 ---
 
@@ -162,9 +163,10 @@ goals, remaining work, or older tasks in a [Compacted] summary above.
 | 项 | 说明 |
 |----|------|
 | `snip_compact` 无语义硬切 | >50 条消息中间一刀 |
-| 仅 50KB 硬限 | 没有更早的预热压缩 |
+| 仅 50KB 字符硬限 | **已改为** `≈0.835 × model_context_window`（token 估算）；可用 `HARNESS_AUTOCOMPACT_PCT` / `HARNESS_CONTEXT_LIMIT`（绝对 token）覆盖 |
 | 自动 memory 写回 | 用户纠正未写入 `.memory/` |
 | transcript 消费 | `.transcripts/` 已写但未用于恢复决策 |
+| 推理模型空摘要 | **已单独立项修复** → [009](./009-compact-empty-summary.md) |
 
 总览与候选下一步见 [bugs README](./README.md)。
 

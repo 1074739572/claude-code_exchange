@@ -44,8 +44,38 @@ MAX_RETRIES = 3
 MAX_CONSECUTIVE_529 = 2
 MAX_RECOVERY_RETRIES = 2
 BASE_DELAY_MS = 500
-CONTEXT_LIMIT = 50000
+# Legacy name: auto-compact is now token-based (see context_limit()).
+# Kept only as a documentation breadcrumb; do not use as a char budget.
+CONTEXT_LIMIT = 50_000
 KEEP_RECENT_TOOL_RESULTS = 3
+
+
+def context_limit() -> int:
+    """Token threshold before auto-compaction (Claude Code–style).
+
+    Default: ``0.835 × model_context_window`` (see ``sizing.autocompact_threshold_tokens``).
+
+    Env overrides:
+    - ``HARNESS_AUTOCOMPACT_PCT`` — fraction (0.835) or percent (83.5)
+    - ``HARNESS_CONTEXT_WINDOW`` — force model window in tokens
+    - ``HARNESS_CONTEXT_LIMIT`` — absolute token threshold (bypasses pct × window)
+    """
+    from harness.agent.compact.sizing import autocompact_threshold_tokens
+
+    return autocompact_threshold_tokens()
+
+
+def compact_tail_count() -> int:
+    """How many trailing messages survive a full compaction (default 5)."""
+    raw = os.getenv("HARNESS_COMPACT_TAIL", "").strip()
+    if not raw:
+        return 5
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 5
+
+
 PERSIST_THRESHOLD = 30000
 CONTINUATION_PROMPT = (
     "Continue from the previous response. Do not repeat completed work."

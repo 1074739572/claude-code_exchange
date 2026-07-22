@@ -12,10 +12,14 @@ from harness.agent.compact import (
     LATEST_USER_FOCUS_MARKER,
     _safe_input_budget,
     _structured_summary_instruction,
+    autocompact_threshold_tokens,
     compact_history,
+    estimate_tokens,
     find_latest_user_text,
     micro_compact,
+    model_context_window,
     reactive_compact,
+    should_autocompact,
     summarize_history,
 )
 from harness.agent.recovery import is_prompt_too_long_error
@@ -36,6 +40,79 @@ class TestSafeInputBudget(unittest.TestCase):
     def test_unknown_model_falls_back(self) -> None:
         budget = _safe_input_budget("unknown-model-xyz")
         self.assertGreaterEqual(budget, 12_000)
+
+
+class TestAutocompactThreshold(unittest.TestCase):
+    """Claude Code–style: tokens ≳ 0.835 × context_window."""
+
+    def tearDown(self) -> None:
+        for key in (
+            "HARNESS_CONTEXT_LIMIT",
+            "HARNESS_CONTEXT_WINDOW",
+            "HARNESS_AUTOCOMPACT_PCT",
+        ):
+            unittest.mock.patch.dict("os.environ", {key: ""})  # no-op safety
+            import os
+
+            os.environ.pop(key, None)
+
+    def test_default_pct_of_window(self) -> None:
+        import os
+
+        os.environ.pop("HARNESS_CONTEXT_LIMIT", None)
+        os.environ.pop("HARNESS_AUTOCOMPACT_PCT", None)
+        os.environ["HARNESS_CONTEXT_WINDOW"] = "200000"
+        try:
+            threshold = autocompact_threshold_tokens("any")
+            self.assertEqual(threshold, int(200_000 * 0.835))
+        finally:
+            os.environ.pop("HARNESS_CONTEXT_WINDOW", None)
+
+    def test_pct_override_as_percent(self) -> None:
+        import os
+
+        os.environ.pop("HARNESS_CONTEXT_LIMIT", None)
+        os.environ["HARNESS_CONTEXT_WINDOW"] = "100000"
+        os.environ["HARNESS_AUTOCOMPACT_PCT"] = "75"
+        try:
+            self.assertEqual(autocompact_threshold_tokens("any"), 75_000)
+        finally:
+            os.environ.pop("HARNESS_CONTEXT_WINDOW", None)
+            os.environ.pop("HARNESS_AUTOCOMPACT_PCT", None)
+
+    def test_absolute_limit_overrides_pct(self) -> None:
+        import os
+
+        os.environ["HARNESS_CONTEXT_WINDOW"] = "1000000"
+        os.environ["HARNESS_CONTEXT_LIMIT"] = "12000"
+        try:
+            self.assertEqual(autocompact_threshold_tokens("any"), 12_000)
+        finally:
+            os.environ.pop("HARNESS_CONTEXT_WINDOW", None)
+            os.environ.pop("HARNESS_CONTEXT_LIMIT", None)
+
+    def test_should_autocompact_uses_tokens_not_old_50k_chars(self) -> None:
+        import os
+
+        # ~60KB of content would have triggered the old 50KB char limit.
+        # With 1M × 0.835 it must NOT compact yet.
+        os.environ.pop("HARNESS_CONTEXT_LIMIT", None)
+        os.environ["HARNESS_CONTEXT_WINDOW"] = "1000000"
+        try:
+            blob = "x" * 60_000
+            messages = [{"role": "user", "content": blob}]
+            self.assertGreater(estimate_tokens(messages), 10_000)
+            self.assertLess(estimate_tokens(messages), autocompact_threshold_tokens())
+            self.assertFalse(should_autocompact(messages))
+        finally:
+            os.environ.pop("HARNESS_CONTEXT_WINDOW", None)
+
+    def test_model_window_qwen_max(self) -> None:
+        import os
+
+        os.environ.pop("HARNESS_CONTEXT_WINDOW", None)
+        self.assertEqual(model_context_window("qwen-max"), 32_000)
+
 
 
 class TestSummarizeHistoryFallback(unittest.TestCase):
@@ -60,6 +137,8 @@ class TestSummarizeHistoryFallback(unittest.TestCase):
             "## User Constraints",
             "## Changed Files",
             "## Key Findings",
+            "## Sources Tried",
+            "## Facts Gathered",
             "## Remaining Work",
             "## Do NOT Forget",
         ):
@@ -213,6 +292,61 @@ class TestPromptTooLong(unittest.TestCase):
 
     def test_unrelated_error_not_matched(self) -> None:
         self.assertFalse(is_prompt_too_long_error(Exception("network timeout")))
+
+
+class TestSummaryThinkingFallback(unittest.TestCase):
+    def test_extract_falls_back_to_thinking_block(self) -> None:
+        from harness.agent.compact.summarize import extract_summary_text
+
+        content = [
+            {"type": "thinking", "thinking": "## Goal\nFind paper X\n"},
+            {"type": "text", "text": ""},
+        ]
+        self.assertIn("## Goal", extract_summary_text(content))
+
+    def test_text_block_preferred_over_thinking(self) -> None:
+        from harness.agent.compact.summarize import extract_summary_text
+
+        content = [
+            {"type": "thinking", "thinking": "internal only"},
+            {"type": "text", "text": "## Goal\nVisible summary"},
+        ]
+        self.assertEqual(extract_summary_text(content), "## Goal\nVisible summary")
+
+    def test_empty_thinking_only_marks_unusable(self) -> None:
+        import harness.agent.compact.summarize as summarize_mod
+        from harness.agent.compact.summarize import SUMMARY_UNUSABLE
+
+        class FakeResp:
+            content = [{"type": "thinking", "thinking": ""}]
+
+        with unittest.mock.patch.object(
+            summarize_mod, "create_message", return_value=FakeResp()
+        ):
+            with unittest.mock.patch.object(summarize_mod, "get_model", return_value="m1"):
+                result = summarize_history([{"role": "user", "content": "hi"}])
+        self.assertEqual(result, SUMMARY_UNUSABLE)
+
+    def test_compact_history_degrades_on_empty_summary(self) -> None:
+        import harness.agent.compact.pipeline as pipeline
+        from harness.agent.compact.summarize import SUMMARY_UNUSABLE
+
+        messages = [{"role": "user", "content": f"msg-{i}"} for i in range(12)]
+        messages.append({"role": "user", "content": "latest user question"})
+
+        with unittest.mock.patch.object(pipeline, "write_transcript", return_value=Path("t.jsonl")):
+            with unittest.mock.patch.object(
+                pipeline, "summarize_history", return_value=SUMMARY_UNUSABLE
+            ):
+                with unittest.mock.patch(
+                    "harness.project.session_store.record_compact_boundary"
+                ):
+                    result = compact_history(messages)
+
+        head = result[0]["content"]
+        self.assertIn("summary unavailable", head.lower())
+        self.assertNotIn("(empty summary)", head)
+        self.assertIn(LATEST_USER_FOCUS_MARKER, result[-1]["content"])
 
 
 if __name__ == "__main__":

@@ -106,7 +106,7 @@ flowchart TD
     subgraph COMPACT_SYS["📦 上下文压缩系统（agent/compact/）"]
         COMPACT_PIPELINE["pipeline.py\n压缩入口：\nprepare_context()\ncompact_history()\nreactive_compact()"]:::compact
         LAYERS["layers.py 压缩策略：\n- keep_tail（保留最近 N 条）\n- micro_compact（删掉完整消息块）\n- snip_compact（截断长字段）\n- tool_result_budget（控制结果大小）"]:::compact
-        SIZING["sizing.py\nestimate_size()\n估算 token 数量"]:::compact
+        SIZING["sizing.py\nestimate_tokens()\n≳0.835×window → compact"]:::compact
         SUMMARIZE["summarize.py\nsummarize_history()\n让 LLM 自己总结旧历史"]:::compact
         FOCUS["messages.py\nensure_latest_user_focus()\n确保最新用户意图保留"]:::compact
     end

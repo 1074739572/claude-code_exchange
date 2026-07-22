@@ -28,6 +28,7 @@ class ModelProfile:
     provider: str
     api_model: str
     thinking: bool = False
+    context_window: int = 0
 
 
 def _load_catalog() -> tuple[str, list[dict]]:
@@ -39,6 +40,7 @@ def _load_catalog() -> tuple[str, list[dict]]:
                 "label": fallback,
                 "provider": "deepseek",
                 "api_model": fallback,
+                "context_window": 1_000_000,
             }
         ]
 
@@ -56,6 +58,7 @@ def _load_catalog() -> tuple[str, list[dict]]:
                 "provider": entry.get("provider", "deepseek"),
                 "api_model": entry.get("api_model", model_id),
                 "thinking": bool(entry.get("thinking")),
+                "context_window": int(entry.get("context_window") or 0),
             }
         )
     if not models:
@@ -65,6 +68,7 @@ def _load_catalog() -> tuple[str, list[dict]]:
                 "label": default,
                 "provider": "deepseek",
                 "api_model": default,
+                "context_window": 1_000_000,
             }
         ]
     return default, models
@@ -77,6 +81,7 @@ def _profile_from_entry(entry: dict) -> ModelProfile:
         provider=entry.get("provider", "deepseek"),
         api_model=entry.get("api_model", entry["id"]),
         thinking=bool(entry.get("thinking")),
+        context_window=int(entry.get("context_window") or 0),
     )
 
 
@@ -100,6 +105,7 @@ def initialize_model(override: str | None = None) -> str:
                     "provider": "deepseek",
                     "api_model": initial,
                     "thinking": False,
+                    "context_window": 0,
                 }
             ]
         if override is not None:
@@ -129,6 +135,7 @@ def get_model_profile(model_id: str | None = None) -> ModelProfile:
             label=mid,
             provider="deepseek",
             api_model=mid,
+            context_window=0,
         )
 
 

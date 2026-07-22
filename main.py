@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Run the improved harness agent from the package root."""
 
+# Apply SSL patch early, before any huggingface_hub imports.
+# Required on some Windows machines where huggingface.co's CA is missing.
+import harness._ssl_patch  # noqa: F401
+
 import argparse
 import sys
 

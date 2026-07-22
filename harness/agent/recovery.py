@@ -21,6 +21,10 @@ class RecoveryState:
         self.has_attempted_reactive_compact = False
         self.fallback_model: str | None = None
         self.has_nudged_empty_reply = False
+        self.has_nudged_web_budget = False
+        # After LookupGuard consecutive blocks: strip tools until a text answer.
+        self.strip_tools_until_answer = False
+        self.has_lookup_force_finalize = False
 
 
 def retry_delay(attempt: int) -> float:

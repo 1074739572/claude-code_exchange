@@ -20,7 +20,7 @@ from harness.agent.recovery import (
 )
 from harness.agent.grounding_guard import GroundingGuard
 from harness.agent.repeat_guard import RepeatGuard
-from harness.agent.lookup_guard import LookupGuard
+from harness.agent.lookup_guard import LOOKUP_FORCE_ANSWER, LookupGuard
 from harness.agent.writing_guard import WritingGuard
 from harness.context import update_context
 from harness.hooks import trigger_hooks
@@ -51,7 +51,9 @@ def _append_assistant(messages: list, content) -> None:
 
 
 def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, max_tokens: int):
-    system = assemble_static_system_prompt()
+    # Optional per-run override (rare). Prefer shared identity + lookup constraints
+    # over swapping personas for evals — see harness.prompts.lookup.
+    system = context.get("system_override") or assemble_static_system_prompt()
     api_messages = messages_with_ephemeral_context(messages, context)
     model_id = state.fallback_model or get_model()
     return with_retry(
@@ -132,6 +134,8 @@ def agent_loop(
         repair_tool_pairing(messages)
         context = update_context(context, messages)
         tools, handlers = get_tool_pool()
+        if state.strip_tools_until_answer:
+            tools, handlers = [], {}
 
         try:
             llm_rounds += 1
@@ -196,11 +200,13 @@ def agent_loop(
 
             emit_final_assistant(messages, response.content)
             trigger_hooks("Stop", messages)
+            state.strip_tools_until_answer = False
             return _finish(False)
 
         results = []
         compacted_now = False
         had_todo_write = False
+        force_lookup_finalize = False
         grounding_block, grounding_msg = grounding_guard.evaluate(
             messages, response.content
         )
@@ -286,6 +292,8 @@ def agent_loop(
                 name, tool_input if isinstance(tool_input, dict) else None
             )
             if lookup_block:
+                if lookup_guard.note_block():
+                    force_lookup_finalize = True
                 renderer.tool_repeat(
                     name,
                     tool_input if isinstance(tool_input, dict) else None,
@@ -377,6 +385,28 @@ def agent_loop(
                 name, tool_input if isinstance(tool_input, dict) else None, str(output)
             )
             writing_guard.note_tool(name)
+            # Mid-budget nudge: once we've used >=60% of the web budget, inject a
+            # one-shot reminder so the agent starts converging instead of
+            # fetching more. Only fires once per turn.
+            if (
+                lookup_guard.active
+                and lookup_guard.max_fetches > 2
+                and not state.has_nudged_web_budget
+                and lookup_guard.fetch_count >= max(2, int(lookup_guard.max_fetches * 0.6))
+            ):
+                state.has_nudged_web_budget = True
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[Harness] You've used {lookup_guard.fetch_count} of "
+                            f"{lookup_guard.max_fetches} web tool calls. Wrap up: "
+                            "synthesize what you have and produce the final answer. "
+                            "Only fetch again if a single, specific source is clearly "
+                            "missing. Prefer `FINAL ANSWER: ...` if requested."
+                        ),
+                    }
+                )
             mutations.note(
                 name,
                 tool_input if isinstance(tool_input, dict) else None,
@@ -413,3 +443,8 @@ def agent_loop(
             note_llm_round_without_todo_update()
 
         messages.append({"role": "user", "content": build_user_content(results)})
+        if force_lookup_finalize and not state.has_lookup_force_finalize:
+            state.has_lookup_force_finalize = True
+            state.strip_tools_until_answer = True
+            messages.append({"role": "user", "content": LOOKUP_FORCE_ANSWER})
+            renderer.warn("LookupGuard: forcing answer (no more web tools)")

@@ -1,4 +1,9 @@
-"""Run improved_harness agent on one GAIA validation question."""
+"""Run improved_harness agent on one GAIA validation question.
+
+Uses the same lookup path as daily CLI (lookup_mode + LOOKUP_CONSTRAINT via
+build_user_prompt). No separate system_override persona — research discipline
+is a shared product capability; this module only adds scoring format + budgets.
+"""
 
 from __future__ import annotations
 
@@ -61,10 +66,17 @@ def run_gaia_task(
     *,
     max_rounds: int = 50,
     bootstrap_mcp: bool = True,
-    web_fetch_limit: int = 18,
-    web_stale_limit: int = 3,
+    web_fetch_limit: int = 10,
+    web_stale_limit: int = 2,
+    context_limit: int | None = None,
+    compact_tail: int = 10,
 ) -> dict[str, Any]:
-    """Ask the agent one GAIA question; return answer + transcript summary."""
+    """Ask the agent one GAIA question; return answer + transcript summary.
+
+    ``context_limit`` is an optional absolute **token** threshold for
+    auto-compact. Default ``None`` uses Claude Code–style
+    ``0.835 × model_context_window`` (same as daily CLI).
+    """
     if bootstrap_mcp:
         try:
             from harness.mcp.pool import bootstrap_mcp_servers
@@ -74,29 +86,37 @@ def run_gaia_task(
             print(f"  MCP bootstrap warning: {type(exc).__name__}: {exc}")
 
     attachment = resolve_attachment(task)
+    # Includes shared LOOKUP_CONSTRAINT (same block daily CLI injects).
     prompt = build_user_prompt(task, attachment)
 
     set_mode("direct")
     messages: list = [{"role": "user", "content": prompt}]
-    # Cap web_search/fetch/browser thrashing (same LookupGuard as lookup mode)
+    # Same LookupGuard path as daily lookup_mode; web_budget keeps the guard
+    # active even if something clears lookup_mode mid-run.
     ctx = update_context(
         {
+            "lookup_mode": True,
             "web_budget": True,
-            "lookup_mode": False,
         },
         messages,
     )
 
-    old_fetch = os.environ.get("HARNESS_LOOKUP_FETCH_LIMIT")
-    old_stale = os.environ.get("HARNESS_LOOKUP_STALE_LIMIT")
-    os.environ["HARNESS_LOOKUP_FETCH_LIMIT"] = str(web_fetch_limit)
-    os.environ["HARNESS_LOOKUP_STALE_LIMIT"] = str(web_stale_limit)
+    # Per-run budgets (LookupGuard + compaction). Absolute context_limit is
+    # optional; default follows pct × model window like daily CLI.
+    _env_overrides = {
+        "HARNESS_LOOKUP_FETCH_LIMIT": str(web_fetch_limit),
+        "HARNESS_LOOKUP_STALE_LIMIT": str(web_stale_limit),
+        "HARNESS_COMPACT_TAIL": str(compact_tail),
+    }
+    if context_limit is not None:
+        _env_overrides["HARNESS_CONTEXT_LIMIT"] = str(context_limit)
+    _env_saved = {key: os.environ.get(key) for key in _env_overrides}
+    os.environ.update(_env_overrides)
 
     hit_cap = False
     try:
         with mock.patch("builtins.input", return_value="y"):
             agent_loop(messages, ctx, max_rounds=max_rounds)
-            # Detect synthetic stop message from the loop
             for msg in reversed(messages):
                 if msg.get("role") != "assistant":
                     continue
@@ -109,14 +129,11 @@ def run_gaia_task(
                 print("  forcing FINAL ANSWER (no tools)…")
                 _force_finalize(messages, ctx, rounds=2)
     finally:
-        if old_fetch is None:
-            os.environ.pop("HARNESS_LOOKUP_FETCH_LIMIT", None)
-        else:
-            os.environ["HARNESS_LOOKUP_FETCH_LIMIT"] = old_fetch
-        if old_stale is None:
-            os.environ.pop("HARNESS_LOOKUP_STALE_LIMIT", None)
-        else:
-            os.environ["HARNESS_LOOKUP_STALE_LIMIT"] = old_stale
+        for key, old in _env_saved.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
 
     raw = _last_assistant_text(messages)
     model_answer = extract_final_answer_from_messages(messages) or extract_final_answer(
