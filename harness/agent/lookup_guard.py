@@ -18,6 +18,7 @@ _LOW_VALUE_MARKERS = (
     "permission denied",
     "no matching chunks",
     "connection issue",
+    "web_search failed",
 )
 
 _OPENREVIEW_SHELL_RE = re.compile(
@@ -45,7 +46,11 @@ def lookup_stale_limit() -> int:
 
 
 def is_web_fetch_tool(name: str, tool_input: dict | None = None) -> bool:
+    if name == "web_search":
+        return True
     if name.startswith("mcp__fetch__"):
+        return True
+    if name.startswith("mcp__playwright__"):
         return True
     if name != "bash":
         return False
@@ -74,6 +79,10 @@ def _url_key(tool_input: dict | None) -> str:
     payload = tool_input or {}
     url = str(payload.get("url", "")).strip()
     if not url:
+        # web_search uses query=; still track as a host-less key so budget applies
+        query = str(payload.get("query", "")).strip()
+        if query:
+            return f"web_search:{query.lower()[:120]}"
         return ""
     parsed = urlparse(url)
     return f"{parsed.netloc}{parsed.path}".lower().rstrip("/")

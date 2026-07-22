@@ -22,10 +22,17 @@ def run_tui() -> None:
             "Or run classic CLI: python main.py --classic"
         ) from exc
 
+    import atexit
+
     from harness.cli import bootstrap_cli_session
     from harness.models import get_model, model_label
     from harness.ui.tui.app import HarnessApp
     from harness.ui.tui.mode import begin_tui_shutdown, clear_tui_shutdown, set_tui_active
+    from harness.ui.tui.terminal_reset import reset_terminal_modes
+
+    # Prior crash in this same tab often leaves mouse tracking on — clear first.
+    reset_terminal_modes()
+    atexit.register(reset_terminal_modes)
 
     history, context = bootstrap_cli_session(
         welcome=False,
@@ -40,3 +47,4 @@ def run_tui() -> None:
         begin_tui_shutdown()
         set_tui_active(False)
         clear_tui_shutdown()
+        reset_terminal_modes()

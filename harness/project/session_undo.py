@@ -14,6 +14,7 @@ _SKIP_PREFIXES = (
     "[Reactive compact]",
     "[Session resumed]",
     "[Resume context]",
+    "[Skill loaded:",
     "[Compacted. Continue",
 )
 

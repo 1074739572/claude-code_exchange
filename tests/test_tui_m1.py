@@ -194,6 +194,163 @@ class TuiImportTests(unittest.TestCase):
         self.assertEqual(opened["ids"], ["a", "b"])
 
 
+class TuiResumeClearTests(unittest.TestCase):
+    def test_resume_list_opens_picker(self):
+        from harness.ui.tui.commands import dispatch_slash
+
+        notes: list[str] = []
+        opened: dict = {}
+
+        class FakeApp:
+            _busy = False
+            history: list = []
+            context: dict = {}
+
+            def tui_set_status(self, text: str) -> None:
+                pass
+
+            def chat_append(self, kind: str, text: str) -> None:
+                notes.append(text)
+
+            def reload_session_view(self) -> None:
+                raise AssertionError("list should not reload")
+
+            def open_inline_picker(self, title, labels, item_ids, *, initial_index=0, on_pick=None):
+                opened["title"] = title
+                opened["ids"] = item_ids
+                opened["on_pick"] = on_pick
+
+        rows = [
+            {
+                "id": "s1",
+                "title": "Alpha",
+                "created_at": 1_700_000_000,
+                "updated_at": 1_700_000_000,
+                "active": True,
+            },
+            {
+                "id": "s2",
+                "title": "Beta",
+                "created_at": 1_700_000_100,
+                "updated_at": 1_700_000_100,
+                "active": False,
+            },
+        ]
+        with mock.patch(
+            "harness.project.resume.format_resume_status",
+            return_value="会话\n  1. Alpha",
+        ):
+            with mock.patch(
+                "harness.project.session_registry.visible_session_summaries",
+                return_value=rows,
+            ):
+                self.assertTrue(dispatch_slash(FakeApp(), "/resume"))
+        self.assertTrue(any("Alpha" in n for n in notes))
+        self.assertEqual(opened["title"], "Select session")
+        self.assertEqual(opened["ids"], ["s1", "s2"])
+
+    def test_resume_switch_reloads_chat(self):
+        from harness.ui.tui.commands import dispatch_slash
+
+        reloads = {"n": 0}
+        notes: list[str] = []
+
+        class FakeApp:
+            _busy = False
+            history = [{"role": "user", "content": "old"}]
+            context: dict = {}
+
+            def tui_set_status(self, text: str) -> None:
+                pass
+
+            def chat_append(self, kind: str, text: str) -> None:
+                notes.append(text)
+
+            def reload_session_view(self) -> None:
+                reloads["n"] += 1
+
+        with mock.patch(
+            "harness.project.resume.run_resume_command",
+            return_value="已切换到会话：Beta（2 条消息）",
+        ) as rr:
+            with mock.patch("harness.messages.repair.repair_tool_pairing"):
+                with mock.patch(
+                    "harness.context.update_context",
+                    side_effect=lambda ctx, hist: {**ctx, "ok": True},
+                ):
+                    self.assertTrue(dispatch_slash(FakeApp(), "/resume 2"))
+                    rr.assert_called_once()
+                    self.assertEqual(rr.call_args.args[0], "2")
+        self.assertEqual(reloads["n"], 1)
+        self.assertTrue(any("已切换" in n for n in notes))
+
+    def test_resume_blocked_while_busy(self):
+        from harness.ui.tui.commands import dispatch_slash
+
+        statuses: list[str] = []
+
+        class FakeApp:
+            _busy = True
+
+            def tui_set_status(self, text: str) -> None:
+                statuses.append(text)
+
+            def chat_append(self, kind: str, text: str) -> None:
+                raise AssertionError("should not append")
+
+        self.assertTrue(dispatch_slash(FakeApp(), "/resume"))
+        self.assertTrue(any("Stop" in s for s in statuses))
+
+    def test_clear_reloads_empty_history(self):
+        from harness.ui.tui.commands import dispatch_slash
+
+        class FakeApp:
+            _busy = False
+            history = [{"role": "user", "content": "x"}]
+            context: dict = {}
+            notes: list[str] = []
+            reloads = 0
+
+            def tui_set_status(self, text: str) -> None:
+                pass
+
+            def chat_append(self, kind: str, text: str) -> None:
+                self.notes.append(text)
+
+            def reload_session_view(self) -> None:
+                self.reloads += 1
+
+        app = FakeApp()
+        with mock.patch(
+            "harness.project.tools.run_project_clear",
+            return_value="已全新起步",
+        ):
+            with mock.patch("harness.messages.repair.repair_tool_pairing"):
+                with mock.patch(
+                    "harness.context.update_context",
+                    side_effect=lambda ctx, hist: dict(ctx),
+                ):
+                    self.assertTrue(dispatch_slash(app, "/clear"))
+        self.assertEqual(app.history, [])
+        self.assertEqual(app.reloads, 1)
+        self.assertTrue(any("全新" in n for n in app.notes))
+
+    def test_resume_context_renders_as_system(self):
+        from harness.ui.tui.chat_history import iter_history_events
+
+        events = list(
+            iter_history_events(
+                [
+                    {
+                        "role": "user",
+                        "content": "[Resume context]\n项目：demo",
+                    }
+                ]
+            )
+        )
+        self.assertEqual(events, [("system", "[Resume context]\n项目：demo")])
+
+
 class TuiShutdownSinkTests(unittest.TestCase):
     def test_shutdown_swallows_renderer_not_console(self):
         from harness.ui.renderer import renderer
@@ -215,6 +372,22 @@ class TuiShutdownSinkTests(unittest.TestCase):
         self.assertTrue(hasattr(HarnessApp, "tui_trim_turn_bubbles"))
         self.assertTrue(hasattr(HarnessApp, "tui_seal_turn_bubbles"))
         self.assertTrue(hasattr(HarnessApp, "action_quit_app"))
+        self.assertTrue(hasattr(HarnessApp, "reload_session_view"))
+        self.assertTrue(hasattr(HarnessApp, "action_swallow_ctrl_c"))
+        self.assertTrue(hasattr(HarnessApp, "action_submit_or_stop"))
+
+    def test_bindings_swallow_ctrl_c_and_ctrl_enter(self):
+        from harness.ui.tui.app import ComposerTextArea, HarnessApp
+
+        keys = {b.key: b.action for b in HarnessApp.BINDINGS}
+        self.assertEqual(keys.get("ctrl+c"), "swallow_ctrl_c")
+        self.assertEqual(keys.get("ctrl+enter"), "submit_or_stop")
+        self.assertEqual(keys.get("escape"), "interrupt")
+        self.assertNotEqual(keys.get("ctrl+c"), "interrupt")
+
+        composer_keys = {b.key: b.action for b in ComposerTextArea.BINDINGS}
+        self.assertEqual(composer_keys.get("enter"), "composer_submit")
+        self.assertEqual(composer_keys.get("shift+enter"), "composer_newline")
 
 
 if __name__ == "__main__":

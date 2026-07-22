@@ -66,6 +66,30 @@ def _hook_print(message: str, *, warn: bool = False) -> None:
         print(f"\033[90m{message}\033[0m" if message.startswith("[HOOK]") else message)
 
 
+# Playwright MCP tools that only browse / observe — not true destructive ops.
+# (Playwright marks many as destructiveHint; prompting on every navigate breaks search.)
+_MCP_BROWSE_SOFT_ALLOW = frozenset(
+    {
+        "browser_navigate",
+        "browser_navigate_back",
+        "browser_snapshot",
+        "browser_take_screenshot",
+        "browser_console_messages",
+        "browser_network_requests",
+        "browser_tabs",
+        "browser_wait_for",
+        "browser_resize",
+        "browser_handle_dialog",
+    }
+)
+
+
+def _mcp_tool_short_name(full_name: str) -> str:
+    # mcp__playwright__browser_navigate → browser_navigate
+    parts = full_name.split("__")
+    return parts[-1] if len(parts) >= 3 else full_name
+
+
 def permission_hook(block):
     name = block_field(block, "name", "")
     tool_input = block_field(block, "input", {}) or {}
@@ -101,6 +125,12 @@ def permission_hook(block):
             return f"Permission denied: path escapes workspace: {path}"
     if name.startswith("mcp__"):
         meta = mcp_tool_meta.get(name, {})
+        # readOnly wins over a noisy destructiveHint (browse tools).
+        if meta.get("readOnly"):
+            return None
+        short = _mcp_tool_short_name(name)
+        if short in _MCP_BROWSE_SOFT_ALLOW:
+            return None
         if meta.get("destructive"):
             _hook_print(f"[permission] MCP destructive tool: {name}", warn=True)
             choice = ask_allow(

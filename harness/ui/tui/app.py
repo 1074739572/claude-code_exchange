@@ -10,7 +10,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
+from textual.widgets import Button, Label, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
 from harness.agent.cancel import request_cancel
@@ -20,6 +20,26 @@ from harness.ui.tui.widgets import MetaChip
 
 _CSS_PATH = Path(__file__).with_name("theme.tcss")
 _TURN_LIVE = "turn-live"
+_COMPOSER_PLACEHOLDER = (
+    "Ask…  Enter send · Shift+Enter newline · Esc stop · Ctrl+Q quit"
+)
+
+
+class ComposerTextArea(TextArea):
+    """Chat composer: Enter sends; Shift+Enter inserts a newline."""
+
+    BINDINGS = [
+        Binding("enter", "composer_submit", "Send", show=False, priority=True),
+        Binding("shift+enter", "composer_newline", "Newline", show=False, priority=True),
+    ]
+
+    def action_composer_submit(self) -> None:
+        app = self.app
+        if hasattr(app, "action_submit_or_stop"):
+            app.action_submit_or_stop()  # type: ignore[attr-defined]
+
+    def action_composer_newline(self) -> None:
+        self.insert("\n")
 
 
 class HarnessApp(App[None]):
@@ -29,8 +49,11 @@ class HarnessApp(App[None]):
     CSS_PATH = _CSS_PATH
     BINDINGS = [
         Binding("escape", "interrupt", "Stop", show=True, priority=True),
-        Binding("ctrl+c", "interrupt", "Stop", show=False, priority=True),
+        # K3: swallow Textual's default help_quit so Ctrl+C does not exit.
+        Binding("ctrl+c", "swallow_ctrl_c", show=False, priority=True),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
+        # Also allow Ctrl+Enter as send (same as Enter).
+        Binding("ctrl+enter", "submit_or_stop", "Send", show=True, priority=True),
     ]
 
     def __init__(self, history: list, context: dict, *, model_name: str = "") -> None:
@@ -60,9 +83,14 @@ class HarnessApp(App[None]):
                 yield OptionList(id="pick-list")
                 yield Label("↑↓ move · Enter confirm · Esc close", id="pick-hint")
             with Horizontal(id="composer-row"):
-                yield Input(
-                    placeholder="Ask…  Enter send · Esc/Stop cancel",
+                yield ComposerTextArea(
+                    "",
                     id="user-input",
+                    soft_wrap=True,
+                    show_line_numbers=False,
+                    compact=True,
+                    tab_behavior="indent",
+                    placeholder=_COMPOSER_PLACEHOLDER,
                 )
                 yield Button("发送", id="send-stop-btn", variant="primary")
 
@@ -77,7 +105,7 @@ class HarnessApp(App[None]):
         self._sync_send_stop_button()
         self.hydrate_history()
         self.set_interval(30.0, self.refresh_usage_bar)
-        self.query_one("#user-input", Input).focus()
+        self._focus_composer()
 
     def on_unmount(self) -> None:
         begin_tui_shutdown()
@@ -88,6 +116,30 @@ class HarnessApp(App[None]):
             self._worker_lock.release()
         BRIDGE.unbind()
         set_tui_active(False)
+
+    def _composer(self) -> ComposerTextArea:
+        return self.query_one("#user-input", ComposerTextArea)
+
+    def _focus_composer(self) -> None:
+        try:
+            self._composer().focus()
+        except Exception:
+            pass
+
+    def _get_composer_text(self) -> str:
+        try:
+            return self._composer().text
+        except Exception:
+            return ""
+
+    def _set_composer_text(self, text: str) -> None:
+        try:
+            self._composer().text = text
+        except Exception:
+            pass
+
+    def _clear_composer(self) -> None:
+        self._set_composer_text("")
 
     # --- Usage + meta ---
 
@@ -146,19 +198,16 @@ class HarnessApp(App[None]):
     def tui_set_busy(self, busy: bool) -> None:
         self._busy = bool(busy)
         self._sync_send_stop_button()
-        # Keep input enabled so user can edit while running / after stop prefill.
+        # Keep composer enabled so user can edit while running / after stop prefill.
         if self._busy:
-            self.tui_set_status("Running… (Stop / Esc)")
+            self.tui_set_status("Running… (Esc / Stop)")
         else:
             if not self._exit_when_idle:
                 self.tui_set_status("Ready")
             self.refresh_usage_bar()
             self.refresh_meta_bar()
             if not self._picking:
-                try:
-                    self.query_one("#user-input", Input).focus()
-                except Exception:
-                    pass
+                self._focus_composer()
 
     def action_pick_model(self) -> None:
         if self._busy:
@@ -304,11 +353,33 @@ class HarnessApp(App[None]):
     def hydrate_history(self) -> None:
         from harness.ui.tui.chat_history import iter_history_events
 
+        # Cap widgets so a huge session cannot freeze / crash Textual on mount.
+        _MAX_HYDRATE_EVENTS = 400
+
         stream = self._chat_stream()
         for child in list(stream.children):
             child.remove()
-        self.mount_welcome()
-        events = list(iter_history_events(self.history))
+        try:
+            self.mount_welcome()
+        except Exception as exc:
+            stream.mount(
+                Static(
+                    f"(welcome failed: {type(exc).__name__}: {exc})",
+                    classes="bubble-system",
+                    markup=False,
+                )
+            )
+        try:
+            events = list(iter_history_events(self.history))
+        except Exception as exc:
+            stream.mount(
+                Static(
+                    f"(history hydrate failed: {type(exc).__name__}: {exc})",
+                    classes="bubble-system",
+                    markup=False,
+                )
+            )
+            return
         if not events:
             stream.mount(
                 Static(
@@ -318,8 +389,30 @@ class HarnessApp(App[None]):
                 )
             )
             return
+        omitted = 0
+        if len(events) > _MAX_HYDRATE_EVENTS:
+            omitted = len(events) - _MAX_HYDRATE_EVENTS
+            events = events[-_MAX_HYDRATE_EVENTS:]
+            stream.mount(
+                Static(
+                    f"(showing last {_MAX_HYDRATE_EVENTS} of "
+                    f"{_MAX_HYDRATE_EVENTS + omitted} history items)",
+                    classes="bubble-system",
+                    markup=False,
+                )
+            )
         for kind, text in events:
-            self.chat_append(kind, text, live=False)
+            try:
+                self.chat_append(kind, text, live=False)
+            except Exception:
+                continue
+
+    def reload_session_view(self) -> None:
+        """Re-hydrate Chat after /resume or /clear mutates history/session."""
+        self._live_turn = False
+        self.hydrate_history()
+        self.refresh_usage_bar()
+        self.refresh_meta_bar()
 
     # --- Bridge targets ---
 
@@ -332,7 +425,7 @@ class HarnessApp(App[None]):
             self.refresh_meta_bar()
         if user_query.strip():
             self.chat_append("user", user_query.strip(), live=True)
-        self.tui_set_status("Running… (Stop / Esc)")
+        self.tui_set_status("Running… (Esc / Stop)")
 
     def tui_append_step(self, line: str) -> None:
         chunk = (line or "").rstrip("\n")
@@ -393,10 +486,7 @@ class HarnessApp(App[None]):
             pass
         if was and notify and cb is not None:
             cb(selected)
-        try:
-            self.query_one("#user-input", Input).focus()
-        except Exception:
-            pass
+        self._focus_composer()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if not self._picking or event.option_list.id != "pick-list":
@@ -422,6 +512,19 @@ class HarnessApp(App[None]):
             return
         self.exit()
 
+    def action_swallow_ctrl_c(self) -> None:
+        """K3: do not quit / interrupt on Ctrl+C — tip for terminal copy."""
+        self.tui_set_status(
+            "Copy: select or Ctrl+Shift+C · Stop: Esc · Quit: Ctrl+Q"
+        )
+
+    def action_submit_or_stop(self) -> None:
+        """Enter / Ctrl+Enter — send when idle, stop when busy."""
+        if self._busy:
+            self.action_interrupt()
+            return
+        self._submit_composer()
+
     def action_interrupt(self) -> None:
         if self._picking:
             self.close_inline_picker(notify=True, selected=None)
@@ -431,9 +534,8 @@ class HarnessApp(App[None]):
             request_cancel()
             self.tui_set_status("Stopping…")
             return
-        inp = self.query_one("#user-input", Input)
-        if inp.value:
-            inp.value = ""
+        if self._get_composer_text().strip():
+            self._clear_composer()
         else:
             self.tui_set_status("Press Ctrl+Q to quit")
 
@@ -445,25 +547,34 @@ class HarnessApp(App[None]):
         else:
             self._submit_composer()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "user-input":
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """H1: grow composer height with line count (3–8 rows)."""
+        if event.text_area.id != "user-input":
             return
-        if self._busy:
-            # B2: Enter while running = Stop
-            self.action_interrupt()
-            return
-        self._submit_composer()
+        try:
+            lines = max(1, event.text_area.document.line_count)
+        except Exception:
+            text = event.text_area.text or ""
+            lines = max(1, text.count("\n") + 1)
+        height = max(3, min(8, lines + (1 if lines < 8 else 0)))
+        try:
+            event.text_area.styles.height = height
+        except Exception:
+            pass
 
     def _submit_composer(self) -> None:
-        inp = self.query_one("#user-input", Input)
-        query = (inp.value or "").strip()
+        query = (self._get_composer_text() or "").strip()
         if not query:
             return
         if self._busy:
             return
         if self._picking:
             self.close_inline_picker(notify=False)
-        inp.value = ""
+        self._clear_composer()
+        try:
+            self._composer().styles.height = 3
+        except Exception:
+            pass
         from harness.ui.tui.commands import dispatch_slash
 
         if dispatch_slash(self, query):
@@ -485,9 +596,10 @@ class HarnessApp(App[None]):
 
                 def _prefill() -> None:
                     try:
-                        field = self.query_one("#user-input", Input)
-                        field.value = redo
-                        field.focus()
+                        self._set_composer_text(redo)
+                        lines = max(1, redo.count("\n") + 1)
+                        self._composer().styles.height = max(3, min(8, lines + 1))
+                        self._focus_composer()
                     except Exception:
                         pass
 

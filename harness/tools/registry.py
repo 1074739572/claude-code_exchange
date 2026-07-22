@@ -36,6 +36,7 @@ from harness.teams import (
 )
 from harness.tools.filesystem import run_bash, run_edit, run_glob, run_read, run_write
 from harness.tools.todo import run_todo_write
+from harness.tools.web_search import run_web_search
 from harness.todos.schema import TODO_WRITE_TOOL
 from harness.worktree import create_worktree, keep_worktree, remove_worktree
 
@@ -380,6 +381,31 @@ BUILTIN_TOOLS = [
         },
     },
     {
+        "name": "web_search",
+        "description": (
+            "Search the public web and return title/url/snippet results. "
+            "Chinese queries use 360/so.com first; English uses Bing RSS. "
+            "Use this FIRST for「搜一下 / 查找 / 有哪些 / who is」. "
+            "Do NOT fetch google.com/baidu.com search pages (robots/captcha). "
+            "After search, open a specific promising URL with mcp__fetch__fetch "
+            "if you need the page body."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query in the user's language",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max hits to return (1–8, default 5)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "rag_index",
         "description": (
             "Index local reference documents for RAG (.md/.txt/.docx). "
@@ -502,6 +528,7 @@ BUILTIN_HANDLERS = {
     "remove_worktree": remove_worktree,
     "keep_worktree": keep_worktree,
     "connect_mcp": connect_mcp,
+    "web_search": run_web_search,
     "rag_index": run_rag_index,
     "rag_search": run_rag_search,
     "rag_status": run_rag_status,

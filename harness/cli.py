@@ -66,6 +66,8 @@ def _help_text() -> str:
   /resume delete <N>        delete session N from list
   /resume delete project    delete long-task state.json
   /resume project           inject thesis state.json (long workflow)
+  /skill                    list skills
+  /skill <name>             inject skill full text into this session (then ask)
   /clear [session]          end session (keep dir); default also deletes state.json
   /clear session            new session id; keep state.json
   /import-transcript [path] [full|merge]
@@ -233,6 +235,18 @@ def run_cli() -> None:
             sub = parts[1] if len(parts) > 1 else ""
             with agent_lock:
                 note = run_resume_command(sub, messages=history)
+                repair_tool_pairing(history)
+                context = update_context(context, history)
+                renderer.plain(note)
+            print()
+            continue
+        if _match_cli_command(query, "/skill"):
+            from harness.skills_loader import run_skill_command
+
+            parts = query.strip().split(maxsplit=1)
+            sub = parts[1] if len(parts) > 1 else ""
+            with agent_lock:
+                note = run_skill_command(sub, messages=history)
                 repair_tool_pairing(history)
                 context = update_context(context, history)
                 renderer.plain(note)

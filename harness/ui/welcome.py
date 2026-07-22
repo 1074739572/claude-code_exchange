@@ -41,7 +41,7 @@ def _chapter_line() -> str | None:
 
 def _commands_hint() -> str:
     return (
-        "/model  /mode  /usage  /undo  /resume  /clear  /banner  /help"
+        "/model  /mode  /usage  /undo  /resume  /skill  /clear  /banner  /help"
         "  ·  Esc/Ctrl+C rollback  ·  q exit"
     )
 

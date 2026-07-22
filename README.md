@@ -156,9 +156,9 @@ TUI：顶栏 **今日/周用量**；Chat 顶部 **欢迎页**（hero + 每日一
 
 每日一句：本地队列 `.project/daily_quotes.json`（Hitokoto）；不足 5 条启动后后台补货。手动：`python -m harness.ui.tui.quotes refill`。
 
-TUI 内置：`/model`、`/mode`、`/help`、`/quit`。其余斜杠（`/rag`、`/resume`…）仍可用 `--classic`。
+TUI 内置：`/model`、`/mode`、`/resume`、`/skill`、`/clear`、`/help`、`/quit`。其余斜杠（`/rag`、`/usage`…）仍可用 `--classic`。
 
-常用命令（classic 全量）：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/usage`、`/rag`、`/clear`、`/resume`。
+常用命令：`/help`、`/model`、`/mode`（含 **file** 文档问答）、`/resume`、`/skill`、`/clear`；classic 另有 `/usage`、`/rag` 等。
 
 ```text
 › Working goal: 修好 lookup 死循环

@@ -68,8 +68,15 @@ def iter_history_events(messages: list) -> Iterator[tuple[ChatKind, str]]:
                 continue
             text = _user_visible_text(content)
             if text:
-                # Skip internal inbox/system-ish prefixes that are huge
-                if text.startswith("[Scheduled]"):
+                # Internal markers: show as system, not as a user bubble
+                if text.startswith("[Skill loaded:"):
+                    from harness.skills_loader import parse_skill_loaded_name, skill_loaded_notice
+
+                    name = parse_skill_loaded_name(text) or "?"
+                    yield ("system", skill_loaded_notice(name))
+                elif text.startswith(
+                    ("[Scheduled]", "[Resume context]", "[Session resumed]", "[Inbox]")
+                ):
                     yield ("system", text)
                 else:
                     yield ("user", text)

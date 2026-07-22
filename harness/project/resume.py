@@ -130,6 +130,7 @@ def _last_message_preview(messages: list, *, max_len: int = 220) -> str | None:
         "[Resume context]",
         "[Session resumed]",
         "[Scheduled]",
+        "[Skill loaded:",
     )
     for msg in reversed(messages):
         role = msg.get("role")

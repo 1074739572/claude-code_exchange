@@ -210,6 +210,7 @@ Hook 事件一览：
 相对教学版明显多出来的内置工具（仍走同一注册表）：
 
 - RAG：`rag_index` / `rag_search` / `rag_status`  
+- 联网检索：`web_search`（中文优先 360，英文 Bing RSS；不经 MCP）  
 - 长项目：`project_*`  
 - 任务板 / cron / teammate / worktree（工程化保留并接线）  
 

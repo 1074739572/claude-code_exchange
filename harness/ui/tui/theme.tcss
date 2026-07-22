@@ -185,17 +185,27 @@ Screen {
     height: auto;
     width: 100%;
     layout: horizontal;
-    align: left middle;
+    align: left bottom;
+    padding: 0 0 1 0;
 }
 
 #user-input {
     width: 1fr;
+    height: 3;
+    min-height: 3;
+    max-height: 8;
     margin: 0 1 0 0;
+    border: tall $accent;
+}
+
+#user-input:focus {
+    border: tall $primary;
 }
 
 #send-stop-btn {
     width: 10;
     min-width: 8;
+    height: 3;
 }
 
 AllowModal {

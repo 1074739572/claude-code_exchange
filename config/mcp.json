@@ -2,14 +2,25 @@
   "mcpServers": {
     "fetch": {
       "command": "python",
-      "args": ["-m", "mcp_server_fetch"],
+      "args": [
+        "-m",
+        "mcp_server_fetch",
+        "--ignore-robots-txt",
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ],
       "env": {
         "PYTHONIOENCODING": "utf-8"
       }
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"]
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--browser",
+        "chromium"
+      ]
     }
   }
 }

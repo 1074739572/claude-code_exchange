@@ -25,7 +25,7 @@ def run_agent_turn(history: list, context: dict, query: str) -> dict:
 
     BRIDGE.reset_turn(user_query=query, model=model_label(get_model()))
     BRIDGE.set_busy(True)
-    BRIDGE.push_status("Running… (Stop / Esc)")
+    BRIDGE.push_status("Running… (Esc / Stop)")
 
     hook_result = trigger_hooks("UserPromptSubmit", query)
     model_query = hook_result if isinstance(hook_result, str) else query
