@@ -1,4 +1,4 @@
-"""Layered context compaction before each LLM call.
+"""Stable tool-result ingress and checkpoint-based context compaction.
 
 Public API is stable at ``harness.agent.compact``; implementation lives in
 sizing / messages / persist / layers / summarize / pipeline.
@@ -22,8 +22,14 @@ from harness.agent.compact.messages import (
     message_has_tool_use,
 )
 from harness.agent.compact.persist import (
+    DEFAULT_TOOL_RESULT_MAX_CHARS,
+    DEFAULT_TOOL_ROUND_MAX_CHARS,
     persist_large_output,
     persist_recallable_output,
+    stabilize_tool_output,
+    stabilize_tool_results,
+    tool_result_max_chars,
+    tool_round_max_chars,
 )
 from harness.agent.compact.pipeline import (
     compact_history,
@@ -50,6 +56,8 @@ _keep_tail = keep_tail
 
 __all__ = [
     "COMPACT_TAIL_COUNT",
+    "DEFAULT_TOOL_RESULT_MAX_CHARS",
+    "DEFAULT_TOOL_ROUND_MAX_CHARS",
     "LATEST_USER_FOCUS_MARKER",
     "TOOL_RESULTS_DIR",
     "_keep_tail",
@@ -73,7 +81,11 @@ __all__ = [
     "reactive_compact",
     "should_autocompact",
     "snip_compact",
+    "stabilize_tool_output",
+    "stabilize_tool_results",
     "summarize_history",
+    "tool_result_max_chars",
     "tool_result_budget",
+    "tool_round_max_chars",
     "write_transcript",
 ]

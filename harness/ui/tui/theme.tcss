@@ -27,6 +27,33 @@ Screen {
     layout: vertical;
 }
 
+.tool-card {
+    width: 100%;
+    height: auto;
+    margin: 0 0 0 1;
+    color: $text-muted;
+    border-left: tall $primary-darken-1;
+}
+
+.tool-card.tool-running {
+    color: $primary;
+}
+
+.tool-card.tool-ok {
+    color: $success;
+}
+
+.tool-card.tool-failed,
+.tool-card.tool-blocked {
+    color: $warning;
+}
+
+.tool-card-detail {
+    color: $text-muted;
+    padding: 0 1;
+    max-height: 8;
+}
+
 .bubble-user {
     color: $secondary;
     text-style: bold;
@@ -130,6 +157,27 @@ Screen {
     margin: 0 0 1 0;
 }
 
+#answer-dock {
+    display: none;
+    height: auto;
+    max-height: 12;
+    border: solid $success;
+    background: $boost;
+    padding: 0 1;
+}
+
+#answer-title {
+    height: 1;
+    color: $success;
+    text-style: bold;
+}
+
+#answer-content {
+    height: auto;
+    max-height: 9;
+    overflow-y: auto;
+}
+
 #footer-stack {
     dock: bottom;
     height: auto;
@@ -148,10 +196,44 @@ Screen {
     color: $primary;
 }
 
+#meta-runtime {
+    width: auto;
+    color: $text-muted;
+    margin: 0 1;
+}
+
 #meta-status {
     width: 1fr;
     color: $text-muted;
     text-align: right;
+}
+
+#progress-strip {
+    height: 1;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+#background-tray {
+    display: none;
+    height: auto;
+    max-height: 7;
+    margin: 0 0 1 0;
+    padding: 0 1;
+    border-left: tall $secondary;
+    background: $boost;
+}
+
+#background-title {
+    height: 1;
+    color: $secondary;
+    text-style: bold;
+}
+
+#background-list {
+    height: auto;
+    max-height: 5;
+    color: $text-muted;
 }
 
 #pick-panel {
@@ -176,6 +258,52 @@ Screen {
 }
 
 #pick-hint {
+    height: 1;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+#interaction-panel {
+    display: none;
+    height: auto;
+    max-height: 16;
+    margin: 0 0 1 0;
+    padding: 0 1;
+    background: $boost;
+    border: thick $warning;
+}
+
+#interaction-title {
+    height: 1;
+    color: $warning;
+    text-style: bold;
+}
+
+#interaction-detail {
+    height: auto;
+    max-height: 5;
+    color: $text;
+    overflow-y: auto;
+}
+
+#interaction-input {
+    height: 3;
+    margin: 1 0 0 0;
+}
+
+#interaction-actions {
+    height: 3;
+    align: right middle;
+}
+
+#interaction-actions Button {
+    width: 12;
+    min-width: 10;
+    margin: 0 0 0 1;
+}
+
+#command-hints {
+    display: none;
     height: 1;
     color: $text-muted;
     padding: 0 1;

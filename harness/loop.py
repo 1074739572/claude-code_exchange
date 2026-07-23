@@ -50,6 +50,20 @@ def _append_assistant(messages: list, content) -> None:
     messages.append(serialize_messages([{"role": "assistant", "content": content}])[0])
 
 
+def _publish_context_metrics(messages: list) -> None:
+    from harness.ui.tui.mode import is_tui_active
+
+    if not is_tui_active():
+        return
+    from harness.agent.compact import estimate_tokens, model_context_window
+    from harness.ui.tui.bridge import BRIDGE
+
+    BRIDGE.push_context_usage(
+        estimate_tokens(messages),
+        model_context_window(get_model()),
+    )
+
+
 def call_llm(messages: list, context: dict, tools: list, state: RecoveryState, max_tokens: int):
     # Optional per-run override (rare). Prefer shared identity + lookup constraints
     # over swapping personas for evals — see harness.prompts.lookup.
@@ -131,6 +145,7 @@ def agent_loop(
             )
 
         prepare_context(messages)
+        _publish_context_metrics(messages)
         repair_tool_pairing(messages)
         context = update_context(context, messages)
         tools, handlers = get_tool_pool()
@@ -224,6 +239,7 @@ def agent_loop(
                 continue
             name = block_field(block, "name", "")
             tool_input = block_field(block, "input", {}) or {}
+            tool_use_id = str(block_field(block, "id", "") or "")
 
             if grounding_block:
                 renderer.tool_repeat(
@@ -231,16 +247,18 @@ def agent_loop(
                     tool_input if isinstance(tool_input, dict) else None,
                     streak=1,
                     blocked=True,
+                    tool_use_id=tool_use_id,
                 )
                 renderer.tool_result(
                     grounding_msg,
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": grounding_msg,
                     }
                 )
@@ -255,10 +273,13 @@ def agent_loop(
                     tool_input if isinstance(tool_input, dict) else None,
                     streak=streak,
                     blocked=should_block,
+                    tool_use_id=tool_use_id,
                 )
             else:
                 renderer.tool_start(
-                    name, tool_input if isinstance(tool_input, dict) else None
+                    name,
+                    tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
 
             if name == "compact":
@@ -278,11 +299,12 @@ def agent_loop(
                     output,
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": output,
                     }
                 )
@@ -299,16 +321,18 @@ def agent_loop(
                     tool_input if isinstance(tool_input, dict) else None,
                     streak=lookup_guard.fetch_count + 1,
                     blocked=True,
+                    tool_use_id=tool_use_id,
                 )
                 renderer.tool_result(
                     lookup_msg,
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": lookup_msg,
                     }
                 )
@@ -323,16 +347,18 @@ def agent_loop(
                     tool_input if isinstance(tool_input, dict) else None,
                     streak=1,
                     blocked=True,
+                    tool_use_id=tool_use_id,
                 )
                 renderer.tool_result(
                     write_msg,
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": write_msg,
                     }
                 )
@@ -344,11 +370,12 @@ def agent_loop(
                     str(blocked),
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": str(blocked),
                     }
                 )
@@ -368,11 +395,12 @@ def agent_loop(
                     output,
                     name=name,
                     tool_input=tool_input if isinstance(tool_input, dict) else None,
+                    tool_use_id=tool_use_id,
                 )
                 results.append(
                     {
                         "type": "tool_result",
-                        "tool_use_id": block_field(block, "id", ""),
+                        "tool_use_id": tool_use_id,
                         "content": output,
                     }
                 )
@@ -390,9 +418,11 @@ def agent_loop(
             # fetching more. Only fires once per turn.
             if (
                 lookup_guard.active
+                and lookup_guard.max_fetches is not None
                 and lookup_guard.max_fetches > 2
                 and not state.has_nudged_web_budget
-                and lookup_guard.fetch_count >= max(2, int(lookup_guard.max_fetches * 0.6))
+                and lookup_guard.fetch_count
+                >= max(2, int(lookup_guard.max_fetches * 0.6))
             ):
                 state.has_nudged_web_budget = True
                 messages.append(
@@ -417,6 +447,7 @@ def agent_loop(
                 str(output),
                 name=name,
                 tool_input=tool_input if isinstance(tool_input, dict) else None,
+                tool_use_id=tool_use_id,
             )
             if name == "todo_write":
                 had_todo_write = True
@@ -427,7 +458,7 @@ def agent_loop(
             results.append(
                 {
                     "type": "tool_result",
-                    "tool_use_id": block_field(block, "id", ""),
+                    "tool_use_id": tool_use_id,
                     "content": output,
                 }
             )

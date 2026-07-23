@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+import json
+import os
 import tempfile
 import unittest
 import unittest.mock
@@ -17,9 +20,12 @@ from harness.agent.compact import (
     estimate_tokens,
     find_latest_user_text,
     micro_compact,
+    prepare_context,
     model_context_window,
     reactive_compact,
     should_autocompact,
+    stabilize_tool_output,
+    stabilize_tool_results,
     summarize_history,
 )
 from harness.agent.recovery import is_prompt_too_long_error
@@ -277,6 +283,153 @@ class TestMicroCompactPersist(unittest.TestCase):
         old_block = result[0]["content"][0]["content"]
         self.assertEqual(old_block, wrapped)
         self.assertNotIn("<persisted-output compacted>\nFull output:", old_block.replace(wrapped, ""))
+
+
+class TestStableToolResultIngress(unittest.TestCase):
+    def test_shared_user_content_builder_applies_ingress_policy(self) -> None:
+        import harness.agent.background as background_mod
+        import harness.agent.compact.persist as persist_mod
+
+        results = [
+            {
+                "type": "tool_result",
+                "tool_use_id": "tool-shared-ingress",
+                "content": "x" * 2_000,
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            tool_dir = Path(tmp) / "tool_results"
+            with unittest.mock.patch.object(persist_mod, "TOOL_RESULTS_DIR", tool_dir):
+                with unittest.mock.patch.object(
+                    background_mod, "collect_background_results", return_value=[]
+                ):
+                    with unittest.mock.patch.dict(
+                        os.environ, {"HARNESS_TOOL_RESULT_MAX_CHARS": "1000"}
+                    ):
+                        content = background_mod.build_user_content(results)
+
+            self.assertIn("<persisted-output truncated", content[0]["content"])
+            self.assertTrue((tool_dir / "tool-shared-ingress.txt").exists())
+            self.assertEqual(results[0]["content"], "x" * 2_000)
+
+    def test_large_output_is_persisted_before_history_ingress(self) -> None:
+        import harness.agent.compact.persist as persist_mod
+
+        output = "HEAD:" + ("x" * 4_000) + ":TAIL"
+        with tempfile.TemporaryDirectory() as tmp:
+            tool_dir = Path(tmp) / "tool_results"
+            with unittest.mock.patch.object(persist_mod, "TOOL_RESULTS_DIR", tool_dir):
+                normalized = stabilize_tool_output(
+                    "tool-large",
+                    output,
+                    tool_name="read_file",
+                    max_chars=1_000,
+                )
+
+            self.assertLessEqual(len(normalized), 1_000)
+            self.assertIn("HEAD:", normalized)
+            self.assertIn(":TAIL", normalized)
+            self.assertIn("use read_file for full output", normalized)
+            self.assertEqual((tool_dir / "tool-large.txt").read_text("utf-8"), output)
+
+    def test_parallel_round_shares_a_total_budget(self) -> None:
+        import harness.agent.compact.persist as persist_mod
+
+        results = [
+            {
+                "type": "tool_result",
+                "tool_use_id": f"tool-{index}",
+                "content": str(index) * 5_000,
+            }
+            for index in range(3)
+        ]
+        env = {
+            "HARNESS_TOOL_RESULT_MAX_CHARS": "10000",
+            "HARNESS_TOOL_ROUND_MAX_CHARS": "3000",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with unittest.mock.patch.object(
+                persist_mod, "TOOL_RESULTS_DIR", Path(tmp) / "tool_results"
+            ):
+                with unittest.mock.patch.dict(os.environ, env):
+                    normalized = stabilize_tool_results(results)
+
+        lengths = [len(block["content"]) for block in normalized]
+        self.assertTrue(all(length <= 1_000 for length in lengths))
+        self.assertLessEqual(sum(lengths), 3_000)
+        self.assertEqual(results[0]["content"], "0" * 5_000)
+
+    def test_unsafe_tool_id_cannot_escape_output_directory(self) -> None:
+        import harness.agent.compact.persist as persist_mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tool_dir = Path(tmp) / "tool_results"
+            with unittest.mock.patch.object(persist_mod, "TOOL_RESULTS_DIR", tool_dir):
+                normalized = stabilize_tool_output(
+                    "../outside",
+                    "x" * 2_000,
+                    max_chars=1_000,
+                )
+            files = list(tool_dir.glob("*.txt"))
+
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].parent, tool_dir)
+        self.assertIn(str(files[0]), normalized)
+
+
+class TestAppendOnlyContextPreparation(unittest.TestCase):
+    def _without_compaction(self):
+        return unittest.mock.patch.dict(
+            os.environ,
+            {
+                "HARNESS_CONTEXT_WINDOW": "1000000",
+                "HARNESS_AUTOCOMPACT_PCT": "99",
+                "HARNESS_CONTEXT_LIMIT": "",
+            },
+        )
+
+    def test_prepare_context_does_not_rewrite_sent_history(self) -> None:
+        messages = [
+            {"role": "user", "content": "inspect the repository"},
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "t1", "name": "read_file", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "x" * 5_000}
+                ],
+            },
+        ]
+        before = copy.deepcopy(messages)
+        with self._without_compaction():
+            prepared = prepare_context(messages)
+
+        self.assertIs(prepared, messages)
+        self.assertEqual(messages, before)
+
+    def test_appending_round_preserves_previous_serialized_prefix(self) -> None:
+        messages = [{"role": "user", "content": "start"}]
+        with self._without_compaction():
+            prepare_context(messages)
+            previous = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+            previous_snapshot = copy.deepcopy(messages)
+            messages.extend(
+                [
+                    {"role": "assistant", "content": "next"},
+                    {"role": "user", "content": "continue"},
+                ]
+            )
+            prepare_context(messages)
+
+        self.assertEqual(messages[: len(previous_snapshot)], previous_snapshot)
+        current_prefix = json.dumps(
+            messages[: len(previous_snapshot)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        self.assertEqual(current_prefix, previous)
 
 
 class TestPromptTooLong(unittest.TestCase):

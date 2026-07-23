@@ -10,13 +10,20 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Label, Markdown, OptionList, Static, TextArea
+from textual.widgets import Button, Input, Label, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
 from harness.agent.cancel import request_cancel
 from harness.ui.tui.bridge import BRIDGE
+from harness.ui.tui.events import (
+    BackgroundEvent,
+    PermissionRequest,
+    PermissionResponse,
+    RuntimeMetrics,
+    ToolEvent,
+)
 from harness.ui.tui.mode import begin_tui_shutdown, set_tui_active
-from harness.ui.tui.widgets import MetaChip
+from harness.ui.tui.widgets import MetaChip, ToolCard
 
 _CSS_PATH = Path(__file__).with_name("theme.tcss")
 _TURN_LIVE = "turn-live"
@@ -31,6 +38,8 @@ class ComposerTextArea(TextArea):
     BINDINGS = [
         Binding("enter", "composer_submit", "Send", show=False, priority=True),
         Binding("shift+enter", "composer_newline", "Newline", show=False, priority=True),
+        Binding("ctrl+up", "composer_history_previous", "Previous", show=False),
+        Binding("ctrl+down", "composer_history_next", "Next", show=False),
     ]
 
     def action_composer_submit(self) -> None:
@@ -40,6 +49,16 @@ class ComposerTextArea(TextArea):
 
     def action_composer_newline(self) -> None:
         self.insert("\n")
+
+    def action_composer_history_previous(self) -> None:
+        app = self.app
+        if hasattr(app, "composer_history_previous"):
+            app.composer_history_previous()  # type: ignore[attr-defined]
+
+    def action_composer_history_next(self) -> None:
+        app = self.app
+        if hasattr(app, "composer_history_next"):
+            app.composer_history_next()  # type: ignore[attr-defined]
 
 
 class HarnessApp(App[None]):
@@ -68,20 +87,51 @@ class HarnessApp(App[None]):
         self._picking = False
         self._exit_when_idle = False
         self._live_turn = False
+        self._permission_request: PermissionRequest | None = None
+        self._permission_callback: Callable[[PermissionResponse], None] | None = None
+        self._tool_cards: dict[str, ToolCard] = {}
+        self._last_tool_signature: tuple[str, str] | None = None
+        self._last_tool_card: ToolCard | None = None
+        self._background_views: dict[str, BackgroundEvent] = {}
+        self._runtime_metrics = RuntimeMetrics()
+        self._tool_health = "tool —"
+        self._network_health = "net —"
+        self._last_step_text = ""
+        self._last_step_widget: Static | None = None
+        self._last_step_count = 0
+        self._input_history: list[str] = []
+        self._input_history_index = 0
 
     def compose(self) -> ComposeResult:
         yield Label("", id="usage-bar")
         with VerticalScroll(id="chat-pane"):
             yield Vertical(id="chat-stream")
+        with Vertical(id="answer-dock"):
+            yield Label("最终答案", id="answer-title")
+            yield Markdown("", id="answer-content")
         with Vertical(id="footer-stack"):
             with Horizontal(id="meta-bar"):
                 yield MetaChip("", id="meta-model", chip="model")
                 yield MetaChip("", id="meta-mode", chip="mode")
+                yield Static("", id="meta-runtime")
                 yield Static("✅ Ready", id="meta-status")
+            yield Static("", id="progress-strip")
+            with Vertical(id="background-tray"):
+                yield Label("后台任务", id="background-title")
+                yield Static("", id="background-list", markup=False)
             with Vertical(id="pick-panel"):
                 yield Label("", id="pick-title")
                 yield OptionList(id="pick-list")
                 yield Label("↑↓ move · Enter confirm · Esc close", id="pick-hint")
+            with Vertical(id="interaction-panel"):
+                yield Label("", id="interaction-title")
+                yield Static("", id="interaction-detail", markup=False)
+                yield Input("", id="interaction-input")
+                with Horizontal(id="interaction-actions"):
+                    yield Button("允许", id="interaction-allow", variant="success")
+                    yield Button("拒绝", id="interaction-deny", variant="error")
+                    yield Button("取消", id="interaction-cancel")
+            yield Static("", id="command-hints", markup=False)
             with Horizontal(id="composer-row"):
                 yield ComposerTextArea(
                     "",
@@ -100,12 +150,20 @@ class HarnessApp(App[None]):
         chat = self.query_one("#chat-pane", VerticalScroll)
         chat.border_title = "Chat"
         self.close_inline_picker(notify=False)
+        self._hide_permission_panel(notify=False)
+        self.query_one("#answer-dock", Vertical).display = False
+        self.query_one("#background-tray", Vertical).display = False
+        self.query_one("#command-hints", Static).display = False
+        self.query_one("#progress-strip", Static).update("○ 等待任务")
         self.refresh_usage_bar()
         self.refresh_meta_bar()
         self._sync_send_stop_button()
         self.hydrate_history()
         self.set_interval(30.0, self.refresh_usage_bar)
         self._focus_composer()
+        md_status = (self.context.get("project_instructions_status") or "").strip()
+        if md_status:
+            self.tui_set_status(md_status)
 
     def on_unmount(self) -> None:
         begin_tui_shutdown()
@@ -183,6 +241,26 @@ class HarnessApp(App[None]):
         except Exception:
             pass
 
+    def tui_runtime_metrics(self, metrics: RuntimeMetrics) -> None:
+        self._runtime_metrics = metrics
+        self._refresh_runtime_chips()
+
+    def _refresh_runtime_chips(self) -> None:
+        metrics = self._runtime_metrics
+        cache_total = metrics.cache_hit_tokens + metrics.cache_miss_tokens
+        cache = f"cache {100 * metrics.cache_hit_rate:.0f}%" if cache_total else "cache —"
+        context = (
+            f"ctx {100 * metrics.context_rate:.0f}%"
+            if metrics.context_window
+            else "ctx —"
+        )
+        try:
+            self.query_one("#meta-runtime", Static).update(
+                f"◫ {context} · {cache} · {self._tool_health} · {self._network_health}"
+            )
+        except Exception:
+            pass
+
     def _sync_send_stop_button(self) -> None:
         try:
             btn = self.query_one("#send-stop-btn", Button)
@@ -241,6 +319,10 @@ class HarnessApp(App[None]):
         use_live = self._live_turn if live is None else live
         extra = f" {_TURN_LIVE}" if use_live else ""
         stream = self._chat_stream()
+        if kind != "step":
+            self._last_step_text = ""
+            self._last_step_widget = None
+            self._last_step_count = 0
         if kind == "assistant":
             stream.mount(Markdown(body, classes=f"bubble-assistant{extra}"))
         elif kind == "user":
@@ -261,6 +343,10 @@ class HarnessApp(App[None]):
             except Exception:
                 pass
         self._live_turn = False
+        self._tool_cards.clear()
+        self._last_tool_card = None
+        self._last_tool_signature = None
+        self._clear_answer_dock()
 
     def tui_seal_turn_bubbles(self) -> None:
         """Keep bubbles but drop live tag so a later interrupt won't tear them."""
@@ -351,7 +437,7 @@ class HarnessApp(App[None]):
         _fade(rule, quote_end + 0.05)
 
     def hydrate_history(self) -> None:
-        from harness.ui.tui.chat_history import iter_history_events
+        from harness.ui.tui.chat_history import iter_history_items
 
         # Cap widgets so a huge session cannot freeze / crash Textual on mount.
         _MAX_HYDRATE_EVENTS = 400
@@ -370,7 +456,7 @@ class HarnessApp(App[None]):
                 )
             )
         try:
-            events = list(iter_history_events(self.history))
+            events = list(iter_history_items(self.history))
         except Exception as exc:
             stream.mount(
                 Static(
@@ -401,9 +487,13 @@ class HarnessApp(App[None]):
                     markup=False,
                 )
             )
-        for kind, text in events:
+        for item in events:
             try:
-                self.chat_append(kind, text, live=False)
+                if isinstance(item, ToolEvent):
+                    stream.mount(ToolCard(item, live=False))
+                else:
+                    kind, text = item
+                    self.chat_append(kind, text, live=False)
             except Exception:
                 continue
 
@@ -418,8 +508,20 @@ class HarnessApp(App[None]):
 
     def tui_reset_turn(self, user_query: str = "", model: str = "") -> None:
         self.close_inline_picker(notify=False)
+        self._hide_permission_panel(notify=False)
         self.tui_seal_turn_bubbles()
         self._live_turn = True
+        self._tool_cards.clear()
+        self._last_tool_card = None
+        self._last_tool_signature = None
+        self._last_step_text = ""
+        self._last_step_widget = None
+        self._last_step_count = 0
+        self._tool_health = "tool —"
+        self._network_health = "net —"
+        self._refresh_runtime_chips()
+        self._clear_answer_dock()
+        self.query_one("#progress-strip", Static).update("● 理解目标  →  ○ 执行  →  ○ 回答")
         if model:
             self._model_name = model
             self.refresh_meta_bar()
@@ -433,13 +535,152 @@ class HarnessApp(App[None]):
             return
         for part in chunk.splitlines():
             if part.strip():
-                self.chat_append("step", part)
+                clean = part.rstrip()
+                if clean == self._last_step_text and self._last_step_widget is not None:
+                    self._last_step_count += 1
+                    self._last_step_widget.update(f"{clean}  ×{self._last_step_count}")
+                    continue
+                self.chat_append("step", clean)
+                try:
+                    child = list(self._chat_stream().children)[-1]
+                    self._last_step_widget = child if isinstance(child, Static) else None
+                except Exception:
+                    self._last_step_widget = None
+                self._last_step_text = clean
+                self._last_step_count = 1
 
     def tui_set_answer(self, text: str) -> None:
         self.chat_append("assistant", text)
+        try:
+            dock = self.query_one("#answer-dock", Vertical)
+            dock.display = True
+            self.query_one("#answer-content", Markdown).update(text)
+            self.query_one("#progress-strip", Static).update("✓ 理解目标  →  ✓ 执行  →  ✓ 回答")
+        except Exception:
+            pass
 
     def tui_append_assistant(self, text: str) -> None:
         self.tui_set_answer(text)
+
+    def _clear_answer_dock(self) -> None:
+        try:
+            self.query_one("#answer-content", Markdown).update("")
+            self.query_one("#answer-dock", Vertical).display = False
+        except Exception:
+            pass
+
+    def tui_tool_event(self, event: ToolEvent) -> None:
+        signature = (event.name, event.summary)
+        card = self._tool_cards.get(event.tool_use_id)
+        if (
+            card is None
+            and event.phase == "repeat"
+            and self._last_tool_card is not None
+            and self._last_tool_signature == signature
+        ):
+            card = self._last_tool_card
+            self._tool_cards[event.tool_use_id] = card
+        if card is None:
+            card = ToolCard(event, live=self._live_turn)
+            self._tool_cards[event.tool_use_id] = card
+            self._chat_stream().mount(card)
+        else:
+            card.update_event(event)
+        self._last_tool_card = card
+        self._last_tool_signature = signature
+        if event.phase in ("failed", "blocked"):
+            self._tool_health = "tool ⚠"
+        elif event.phase == "ok":
+            self._tool_health = "tool ✓"
+        if any(word in event.name.lower() for word in ("fetch", "search", "browser", "http")):
+            if event.phase in ("failed", "blocked"):
+                self._network_health = "net ⚠"
+            elif event.phase == "ok":
+                self._network_health = "net ✓"
+        self._refresh_runtime_chips()
+        try:
+            self.query_one("#progress-strip", Static).update(
+                f"✓ 理解目标  →  ● {event.name}  →  ○ 回答"
+            )
+        except Exception:
+            pass
+        self._scroll_chat_end()
+
+    def tui_background_event(self, event: BackgroundEvent) -> None:
+        self._background_views[event.task_id] = event
+        lines = []
+        icons = {"running": "●", "completed": "✓", "failed": "✗"}
+        for task in self._background_views.values():
+            command = " ".join(task.command.split())
+            if len(command) > 72:
+                command = command[:71] + "…"
+            lines.append(f"{icons.get(task.phase, '●')} {task.task_id}  {command}")
+        try:
+            tray = self.query_one("#background-tray", Vertical)
+            tray.display = bool(lines)
+            self.query_one("#background-title", Label).update(
+                f"后台任务 ({sum(1 for item in self._background_views.values() if item.phase == 'running')} 运行中)"
+            )
+            self.query_one("#background-list", Static).update("\n".join(lines))
+        except Exception:
+            pass
+
+    # --- Inline permission / editable tool request ---
+
+    def tui_request_permission(
+        self,
+        request: PermissionRequest,
+        callback: Callable[[PermissionResponse], None],
+    ) -> None:
+        """Show a blocking worker request without leaving the current screen."""
+        if self._permission_request is not None:
+            callback(PermissionResponse(request.request_id, "deny", request.detail))
+            return
+        self.close_inline_picker(notify=False)
+        self._permission_request = request
+        self._permission_callback = callback
+        panel = self.query_one("#interaction-panel", Vertical)
+        panel.display = True
+        self.query_one("#interaction-title", Label).update(f"⚠ {request.title}")
+        self.query_one("#interaction-detail", Static).update(request.detail)
+        editor = self.query_one("#interaction-input", Input)
+        editor.value = request.detail if request.editable else ""
+        editor.placeholder = request.placeholder
+        editor.display = request.editable
+        self.tui_set_status("Waiting for tool permission")
+        if request.editable:
+            editor.focus()
+        else:
+            self.query_one("#interaction-allow", Button).focus()
+
+    def _resolve_permission(self, decision: str) -> None:
+        request = self._permission_request
+        callback = self._permission_callback
+        if request is None:
+            return
+        value = request.detail
+        if request.editable:
+            value = self.query_one("#interaction-input", Input).value
+        response = PermissionResponse(request.request_id, decision, value)
+        self._hide_permission_panel(notify=False)
+        if callback is not None:
+            callback(response)
+
+    def _hide_permission_panel(self, *, notify: bool = True) -> None:
+        request = self._permission_request
+        callback = self._permission_callback
+        self._permission_request = None
+        self._permission_callback = None
+        try:
+            panel = self.query_one("#interaction-panel", Vertical)
+            panel.display = False
+            self.query_one("#interaction-input", Input).value = ""
+        except Exception:
+            pass
+        if notify and request is not None and callback is not None:
+            callback(PermissionResponse(request.request_id, "cancel", request.detail))
+        if not self._picking:
+            self._focus_composer()
 
     # --- Inline picker ---
 
@@ -526,6 +767,10 @@ class HarnessApp(App[None]):
         self._submit_composer()
 
     def action_interrupt(self) -> None:
+        if self._permission_request is not None:
+            self._resolve_permission("cancel")
+            self.tui_set_status("Permission cancelled")
+            return
         if self._picking:
             self.close_inline_picker(notify=True, selected=None)
             self.tui_set_status("Picker closed")
@@ -540,6 +785,15 @@ class HarnessApp(App[None]):
             self.tui_set_status("Press Ctrl+Q to quit")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "interaction-allow":
+            self._resolve_permission("allow")
+            return
+        if event.button.id == "interaction-deny":
+            self._resolve_permission("deny")
+            return
+        if event.button.id == "interaction-cancel":
+            self._resolve_permission("cancel")
+            return
         if event.button.id != "send-stop-btn":
             return
         if self._busy:
@@ -561,6 +815,47 @@ class HarnessApp(App[None]):
             event.text_area.styles.height = height
         except Exception:
             pass
+        self._refresh_command_hints(event.text_area.text or "")
+
+    def _refresh_command_hints(self, text: str) -> None:
+        commands = (
+            "/model",
+            "/mode",
+            "/rag",
+            "/resume",
+            "/clear",
+            "/skill",
+            "/usage",
+            "/help",
+        )
+        token = text.strip()
+        matches = [command for command in commands if command.startswith(token)]
+        show = token.startswith("/") and " " not in token and bool(matches)
+        try:
+            hint = self.query_one("#command-hints", Static)
+            hint.display = show
+            hint.update("  ".join(matches[:6]) if show else "")
+        except Exception:
+            pass
+
+    def composer_history_previous(self) -> None:
+        if not self._input_history:
+            return
+        self._input_history_index = max(0, self._input_history_index - 1)
+        self._set_composer_text(self._input_history[self._input_history_index])
+
+    def composer_history_next(self) -> None:
+        if not self._input_history:
+            return
+        self._input_history_index = min(
+            len(self._input_history), self._input_history_index + 1
+        )
+        text = (
+            self._input_history[self._input_history_index]
+            if self._input_history_index < len(self._input_history)
+            else ""
+        )
+        self._set_composer_text(text)
 
     def _submit_composer(self) -> None:
         query = (self._get_composer_text() or "").strip()
@@ -570,6 +865,9 @@ class HarnessApp(App[None]):
             return
         if self._picking:
             self.close_inline_picker(notify=False)
+        self._input_history.append(query)
+        self._input_history = self._input_history[-100:]
+        self._input_history_index = len(self._input_history)
         self._clear_composer()
         try:
             self._composer().styles.height = 3

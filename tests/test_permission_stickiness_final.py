@@ -12,6 +12,7 @@ from harness.prompts.goal_stickiness import (
     looks_like_slot_fill,
 )
 from harness.ui.final_answer import emit_final_assistant
+from harness.ui.tui.events import PermissionResponse
 
 
 class TestGoalStickiness(unittest.TestCase):
@@ -64,6 +65,19 @@ class TestPermissionPatterns(unittest.TestCase):
         self.assertIsNone(_DESTRUCTIVE_RE.search("python -c 'from harness.cli import x'"))
         self.assertIsNotNone(_DESTRUCTIVE_RE.search("rm foo.txt"))
         self.assertIsNotNone(_NESTED_AGENT_RE.search("python main.py"))
+
+    def test_destructive_command_can_be_edited_inline_before_allow(self) -> None:
+        block = {
+            "type": "tool_use",
+            "name": "bash",
+            "input": {"command": "rm old.txt"},
+        }
+        with patch(
+            "harness.hooks.ask_permission",
+            return_value=PermissionResponse("p1", "allow", "rm safe.txt"),
+        ):
+            self.assertIsNone(permission_hook(block))
+        self.assertEqual(block["input"]["command"], "rm safe.txt")
 
 
 class TestEmitFinalAssistant(unittest.TestCase):

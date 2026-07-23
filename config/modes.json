@@ -7,7 +7,7 @@
       "lead_model_hint": null,
       "enable_task": false,
       "disable_tools": [],
-      "prompt": "Execution mode: DIRECT\n- Use the current model to execute work yourself.\n- Use todo_write when the work has 3+ clear steps.\n- Do NOT spawn task subagents unless the user explicitly asks.\n- Do not delegate to other models."
+      "prompt": "Execution mode: DIRECT\n- Default workflow for implementation work: Resolve → Act → Close (clarify only what blocks action, then do the work, then stop).\n- Use the current model to execute work yourself.\n- Use todo_write when the work has 3+ clear steps.\n- Do NOT spawn task subagents unless the user explicitly asks.\n- Do not delegate to other models.\n- For factual / research questions: answer from tools + evidence; do not treat them as refactors of this harness."
     },
     "plan": {
       "label": "规划 Plan",
@@ -51,6 +51,25 @@
         "todo_write"
       ],
       "prompt": "Execution mode: FILE (document Q&A)\n- Classic CLI and Textual TUI route normal messages directly to local RAG over files/; no coding agent loop runs.\n- Answers must be grounded in retrieved excerpts only.\n- Scope defaults to the full indexed corpus and can be narrowed with /rag select or /rag pick.\n- Switch to /mode direct for coding, editing, or non-document tasks."
+    },
+    "grill": {
+      "label": "拷问 Grill",
+      "summary": "内置 grill-me：先解析目标并逐题拷问，你确认后再执行",
+      "lead_model_hint": null,
+      "enable_task": false,
+      "confirm_before_execute": true,
+      "builtin_skills": ["grill-me"],
+      "disable_tools": [
+        "write_file",
+        "edit_file",
+        "bash",
+        "task",
+        "spawn_teammate",
+        "create_worktree",
+        "remove_worktree",
+        "project_set_chapter"
+      ],
+      "prompt": "Execution mode: GRILL (confirm-before-execute)\n- Builtin skill grill-me is already in context — follow it.\n- On a new request: parse the goal briefly, then grill ONE question at a time.\n- Look up facts with read_file/glob/rag_search; only ask the user for decisions.\n- Do NOT implement, edit, or run destructive commands while LOCKED.\n- When aligned: summarize the agreed plan and ask the user to reply「确认执行」or go.\n- After UNLOCKED: execute the agreed plan; do not reopen settled decisions without cause.\n- Use todo_write for the agreed checklist once unlocked (or while locked for planning only)."
     }
   }
 }

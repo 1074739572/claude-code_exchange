@@ -66,7 +66,10 @@ def run_agent_on_workspace(
 
     set_mode("direct")
     messages = [{"role": "user", "content": build_prompt(instance)}]
+    from harness.prompts.project_md import apply_project_instructions
+
     ctx = update_context({}, messages)
+    apply_project_instructions(ctx, start=workspace)
 
     try:
         with mock.patch("builtins.input", return_value="y"):

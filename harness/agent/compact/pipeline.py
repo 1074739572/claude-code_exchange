@@ -6,12 +6,7 @@ import json
 import time
 from pathlib import Path
 
-from harness.agent.compact.layers import (
-    keep_tail,
-    micro_compact,
-    snip_compact,
-    tool_result_budget,
-)
+from harness.agent.compact.layers import keep_tail, snip_compact
 from harness.agent.compact.messages import ensure_latest_user_focus
 from harness.agent.compact.sizing import (
     estimate_size,
@@ -106,10 +101,14 @@ def reactive_compact(messages: list) -> list:
 
 
 def prepare_context(messages: list) -> list:
-    messages[:] = tool_result_budget(messages)
-    messages[:] = snip_compact(messages)
-    messages[:] = micro_compact(messages)
-    # Claude Code–style: estimate_tokens ≳ 0.835 × context_window
+    """
+    Keep sent history append-only until a real compaction checkpoint.
+
+    Tool outputs are bounded before they enter history. Progressively rewriting
+    old messages here would invalidate the exact prefix reused by provider
+    prompt caches on every tool round.
+    """
+    # Claude Code–style checkpoint: estimate_tokens ≳ 0.835 × context_window.
     if should_autocompact(messages):
         messages[:] = compact_history(messages)
     return messages

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterator, Literal
+from typing import Iterator, Literal, TypeAlias
 
 from harness.ui.final_answer import assistant_text_blocks
 from harness.ui.tool_display import (
@@ -10,8 +10,10 @@ from harness.ui.tool_display import (
     summarize_failure_output,
     summarize_tool_input,
 )
+from harness.ui.tui.events import ToolEvent
 
 ChatKind = Literal["user", "step", "assistant", "system"]
+ChatItem: TypeAlias = tuple[ChatKind, str] | ToolEvent
 
 
 def _block_type(block) -> str | None:
@@ -54,17 +56,27 @@ def _user_visible_text(content) -> str:
     return str(content).strip() if content else ""
 
 
-def iter_history_events(messages: list) -> Iterator[tuple[ChatKind, str]]:
-    """Yield (kind, text) for hydrating the merged chat pane (S1 + H1 + R3)."""
-    for msg in messages:
+def _tool_results_after(messages: list, index: int) -> dict[str, str]:
+    if index + 1 >= len(messages):
+        return {}
+    content = messages[index + 1].get("content")
+    if not _is_tool_result_message(content):
+        return {}
+    return {
+        str(_block_field(block, "tool_use_id", "") or ""): str(
+            _block_field(block, "content", "") or ""
+        )
+        for block in content
+    }
+
+
+def iter_history_items(messages: list) -> Iterator[ChatItem]:
+    """Yield structured items so live and restored tool calls share one UI."""
+    for index, msg in enumerate(messages):
         role = msg.get("role")
         content = msg.get("content")
         if role == "user":
             if _is_tool_result_message(content):
-                for block in content:
-                    output = _block_field(block, "content", "")
-                    if is_failure_tool_output(output):
-                        yield ("step", f"  → {summarize_failure_output(output)}")
                 continue
             text = _user_visible_text(content)
             if text:
@@ -93,6 +105,7 @@ def iter_history_events(messages: list) -> Iterator[tuple[ChatKind, str]]:
                     break
 
         if has_tools:
+            result_by_id = _tool_results_after(messages, index)
             for text in assistant_text_blocks(content):
                 if text.strip():
                     yield ("step", f"› {_preview_intent(text)}")
@@ -105,10 +118,34 @@ def iter_history_events(messages: list) -> Iterator[tuple[ChatKind, str]]:
                     if not isinstance(tool_input, dict):
                         tool_input = {}
                     detail = summarize_tool_input(name, tool_input)
-                    suffix = f"  {detail}" if detail else ""
-                    yield ("step", f"● {name}{suffix}")
+                    tool_id = str(_block_field(block, "id", "") or f"history-{index}")
+                    output = result_by_id.get(tool_id, "")
+                    failed = bool(output) and is_failure_tool_output(output)
+                    phase = "failed" if failed else ("ok" if output else "running")
+                    preview = summarize_failure_output(output) if failed else (
+                        "Completed" if output else "No recorded result"
+                    )
+                    yield ToolEvent(
+                        tool_use_id=tool_id,
+                        name=name,
+                        summary=detail,
+                        phase=phase,
+                        preview=preview,
+                    )
             continue
 
         for text in assistant_text_blocks(content):
             if text.strip():
                 yield ("assistant", text.strip())
+
+
+def iter_history_events(messages: list) -> Iterator[tuple[ChatKind, str]]:
+    """Compatibility flattened history used by older callers and tests."""
+    for item in iter_history_items(messages):
+        if isinstance(item, ToolEvent):
+            suffix = f"  {item.summary}" if item.summary else ""
+            yield ("step", f"● {item.name}{suffix}")
+            if item.phase in ("failed", "blocked") and item.preview:
+                yield ("step", f"  → {item.preview}")
+            continue
+        yield item

@@ -162,6 +162,11 @@ Hook 事件一览：
 
 - `disable_tools`：在 `get_tool_pool` 阶段直接去掉 → API schema 里没有  
 - `enable_task`：是否挂上 `task` 子代理工具  
+- `builtin_skills`：每轮把指定 skill 全文注入 ephemeral 上下文（无需 `/skill`）  
+- `confirm_before_execute`：确认门闩；锁定时应用 `disable_tools`，用户回复「确认执行」/ `go` 后解锁  
+
+内置示例：`/mode grill` = `builtin_skills: ["grill-me"]` + `confirm_before_execute`。  
+重新上锁：说「重新拷问」，或离开再进入该模式。
 
 ---
 

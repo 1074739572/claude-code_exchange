@@ -13,6 +13,8 @@ def format_usage_bar() -> str:
     today = totals_for_day(date.today())
     week = totals_for_days(date_range(date.today(), 7))
     return (
-        f" 📊 今日  in {format_tokens(today.input_tokens)} · out {format_tokens(today.out)}"
-        f"   ·   📅 本周  in {format_tokens(week.input_tokens)} · out {format_tokens(week.out)} "
+        f" 📊 今日 in {format_tokens(today.input_tokens)} · hit {100 * today.hit_rate:.0f}%"
+        f" · out {format_tokens(today.out)}"
+        f"   ·   📅 本周 in {format_tokens(week.input_tokens)} · hit {100 * week.hit_rate:.0f}%"
+        f" · out {format_tokens(week.out)} "
     )

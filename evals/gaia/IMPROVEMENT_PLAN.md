@@ -21,7 +21,7 @@ evals/gaia/scorer.py       官方评分逻辑 + FINAL ANSWER 提取
 harness/loop.py            核心循环（LLM→工具→guard→注入 nudge）
 harness/agent/lookup_guard.py  web 预算/stale/单站/近重复 拦截
 harness/agent/compact/     上下文压缩（summarize→只留摘要+尾部5条）
-harness/prompts/sections.py    系统 prompt（"You are a coding agent"）
+harness/prompts/sections.py    系统 prompt（薄身份 `You are Harness` + ROLE；编码纪律在 mode）
 harness/tools/registry.py      工具池 + 工具描述
 ```
 
@@ -40,19 +40,17 @@ harness/tools/registry.py      工具池 + 工具描述
 - GAIA eval 默认预算降到 `web_fetch_limit=10, web_stale_limit=2`。
 - `_force_finalize`：max_rounds 或无答案时，无工具跑 2 轮强制产出 FINAL ANSWER。
 - **✅ CONTEXT_LIMIT → token 比例触发**：默认 `estimate_tokens ≳ 0.835 × context_window`（对齐 Claude Code）；`models.json` 的 `context_window`；绝对覆盖仍用 `HARNESS_CONTEXT_LIMIT`（**tokens**）。GAIA 默认走同一规则 + `compact_tail=10`。
-- **✅ 研究纪律收归共享路径（纠偏「评测换皮」）**：
-  - 撤回 `GAIA_SYSTEM_PROMPT` + `system_override`（不为过测单独换身份）。
-  - `harness/prompts/lookup.py` 抽出 `RESEARCH_DISCIPLINE`，写入日常 `LOOKUP_CONSTRAINT`。
-  - identity 改为「coding agent that also answers factual / research questions」。
-  - GAIA `build_user_prompt` 只保留评分格式，并 `append_lookup_constraint`；`lookup_mode=True`。
-  - 原则：评测暴露问题 → 改日常也会走的能力；FINAL ANSWER 才留在 evals/。
+- **✅ 身份纠偏（对齐 OpenHands / Claude Code）**：静态 identity = 薄产品人设
+  `You are Harness…` + `<ROLE>`；**不再**写死 `coding agent`。
+  `Resolve → Act → Close` 下沉到 `config/modes.json` 的 DIRECT mode。
+  问句先回答、未要求则不擅自改代码（OpenHands ROLE 同款）。
 - **✅ Compact 空摘要失忆（模式 C）**：`docs/bugs/009-compact-empty-summary.md` —
   thinking 回退提取 + 不可用则降级保留近期消息，禁止 `(empty summary)`。
 - **✅ LookupGuard 校准（模式 B/D）**：`docs/bugs/010-lookup-guard-calibration.md` —
   hard_fail vs soft_stale；连续 block → strip tools + `LOOKUP_FORCE_ANSWER`。
 
 ### 5. 新发现的两个隐藏问题（本次整理时确认）
-- **身份错位**：GAIA 评测跑的是 `"You are a coding agent. Follow Resolve → Act → Close"` 的系统 prompt（`sections.py`），里面全是 coding 任务的纪律（deixis 消解、工作目录、thesis 技能目录）。研究型问答任务用 coding persona，工具选择和行为习惯都会偏。
+- **身份（已纠偏）**：曾写死 coding agent；现为薄产品人设 `You are Harness` + `<ROLE>`，编码流程在 DIRECT mode。
 - **CONTEXT_LIMIT=50000 字符太小**（`settings.py:47`）：web 任务一页 fetch 就 10–50KB，两三次就触发 compact。**模式 C 的触发频率被这个放大了**——compact 本身有 bug，又特别容易被触发。
 
 ---
@@ -82,12 +80,10 @@ GAIA：`GAIA_ANSWER_INSTRUCTIONS`、`GAIA_SCORING_REMINDER`、`FORCE_FINAL_ANSWE
 #### 1.5 失败换源策略表 —— 治模式 B 的 agent 侧 ✅ 已落入共享层（简版）
 `RESEARCH_DISCIPLINE` 含换源原则；更细的站点表可后续再补进 lookup.py。
 
-#### 1.6 身份错位 —— ❌ 不要「评测换皮」，✅ 改共享身份 + 走 lookup 路径
-**纠偏（已落地）**：
-- 撤回 `GAIA_SYSTEM_PROMPT` / `system_override`（那是为过测换皮）。
-- identity：`coding agent that also answers factual / research questions` + 查事实短纪律。
-- GAIA：`lookup_mode=True` + `append_lookup_constraint`；user prompt 只留 FINAL ANSWER 评分格式。
-- 原则：评测暴露问题 → 修日常也会走的能力。
+#### 1.6 身份 —— ✅ 薄产品人设（对齐 OpenHands / Claude Code）
+- 静态：`You are Harness…` + `<ROLE>`（问句先答；未要求不改代码；查事实纪律指针）。
+- `Resolve → Act → Close` 在 `config/modes.json` → DIRECT。
+- GAIA：继续共享 lookup 路径，不换皮 system。
 
 ### 第 2 层：Compact 层（P0 硬 bug，必须修）
 

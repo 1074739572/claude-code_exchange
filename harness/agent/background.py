@@ -2,36 +2,38 @@
 
 from __future__ import annotations
 
+import re
 import threading
 
+from harness.agent.compact.persist import stabilize_tool_results
 from harness.hooks import trigger_hooks
 from harness.messages.blocks import block_field
 from harness.tools.dispatch import call_tool_handler
+from harness.ui.tui.events import BackgroundEvent
 
 _bg_counter = 0
 background_tasks: dict[str, dict] = {}
 background_results: dict[str, str] = {}
 background_lock = threading.Lock()
+_SLOW_COMMAND_RE = re.compile(
+    r"(?:^|[;&|]\s*)("
+    r"(?:python\s+-m\s+)?pytest\b|"
+    r"(?:pip|python\s+-m\s+pip)\s+install\b|"
+    r"(?:npm|pnpm|yarn)\s+(?:install|build|test)\b|"
+    r"cargo\s+(?:build|test)\b|"
+    r"docker\s+build\b|"
+    r"make(?:\s|$)|"
+    r"(?:gradle|mvn)\s+.*(?:build|test|package)\b"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
     if tool_name != "bash":
         return False
-    command = tool_input.get("command", "").lower()
-    slow_keywords = [
-        "install",
-        "build",
-        "test",
-        "deploy",
-        "compile",
-        "docker build",
-        "pip install",
-        "npm install",
-        "cargo build",
-        "pytest",
-        "make",
-    ]
-    return any(keyword in command for keyword in slow_keywords)
+    command = str(tool_input.get("command", ""))
+    return bool(_SLOW_COMMAND_RE.search(command))
 
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
@@ -57,6 +59,14 @@ def start_background_task(block, handlers: dict) -> str:
         with background_lock:
             background_tasks[bg_id]["status"] = "completed"
             background_results[bg_id] = str(result)
+        _push_background_event(
+            BackgroundEvent(
+                task_id=bg_id,
+                command=str(command),
+                phase="completed",
+                preview=str(result)[:240],
+            )
+        )
 
     with background_lock:
         background_tasks[bg_id] = {
@@ -65,8 +75,25 @@ def start_background_task(block, handlers: dict) -> str:
             "status": "running",
         }
     threading.Thread(target=worker, daemon=True).start()
-    print(f"  \033[33m[background] {bg_id}: {str(command)[:60]}\033[0m")
+    event = BackgroundEvent(
+        task_id=bg_id,
+        command=str(command),
+        phase="running",
+    )
+    if not _push_background_event(event):
+        print(f"  \033[33m[background] {bg_id}: {str(command)[:60]}\033[0m")
     return bg_id
+
+
+def _push_background_event(event: BackgroundEvent) -> bool:
+    from harness.ui.tui.mode import is_tui_active
+
+    if not is_tui_active():
+        return False
+    from harness.ui.tui.bridge import BRIDGE
+
+    BRIDGE.push_background(event)
+    return True
 
 
 def collect_background_results() -> list[str]:
@@ -94,7 +121,9 @@ def collect_background_results() -> list[str]:
 
 
 def build_user_content(results: list[dict]) -> list[dict]:
-    content = list(results)
+    # Tool output becomes immutable once appended to message history. Persist and
+    # bound it here, at the single ingress shared by normal and cancelled rounds.
+    content = stabilize_tool_results(results)
     for note in collect_background_results():
         content.append({"type": "text", "text": note})
     return content

@@ -74,10 +74,18 @@ def dispatch_slash(app: HarnessApp, query: str) -> bool:
         app._run_rag_command(q)
         return True
 
+    if _match(q, "/usage"):
+        from harness.usage.report import handle_usage_command
+
+        app.chat_append("assistant", handle_usage_command(q))
+        app.refresh_usage_bar()
+        app.tui_set_status("Usage refreshed")
+        return True
+
     if q.startswith("/"):
         app.chat_append(
             "system",
-            f"`{q}` not in TUI yet. Built-in: /model /mode /rag /resume /skill /clear /help /classic /quit. "
+            f"`{q}` not in TUI yet. Built-in: /model /mode /rag /resume /skill /clear /usage /help /classic /quit. "
             "Or: python main.py --classic",
         )
         app.tui_set_status("Unknown command")
@@ -101,7 +109,8 @@ def _help_md() -> str:
 | `/model` | Pick model (or click 🤖) |
 | `/model <id>` | Switch by id |
 | `/mode` | Pick mode (or click 🧭) |
-| `/mode <id>` | Switch mode |
+| `/mode <id>` | Switch mode (`direct` / `plan` / `orchestrate` / `file` / `grill`) |
+| `/mode grill` | Builtin grill-me: ask → clarify → confirm → execute |
 | `/rag` | RAG help |
 | `/rag index [path]` | Build or refresh document index |
 | `/rag docs` / `/rag select 1,3` | List or select document scope |
@@ -114,6 +123,7 @@ def _help_md() -> str:
 | `/skill <name>` | Inject skill into session (then ask) |
 | `/clear` | Clear session (+ project by default) |
 | `/clear session` | Clear chat only, keep state.json |
+| `/usage [today|week|month|year]` | Token usage and cache hit rate |
 | `/help` | This help |
 | `/classic` | Rich CLI hint |
 | `/quit` | Exit (Ctrl+Q) |
@@ -213,6 +223,7 @@ def _open_resume_picker(app: HarnessApp, rows: list[dict]) -> None:
 def _handle_clear(app: HarnessApp, query: str) -> None:
     from harness.loop import agent_lock
     from harness.project.tools import run_project_clear
+    from harness.prompts.project_md import apply_project_instructions
 
     parts = query.strip().split(maxsplit=1)
     sub = parts[1].lower() if len(parts) > 1 else ""
@@ -221,12 +232,15 @@ def _handle_clear(app: HarnessApp, query: str) -> None:
     with agent_lock:
         note = run_project_clear(clear_project=not keep_project)
         app.history.clear()
-        _apply_history_side_effects(app)
+        from harness.context import update_context
+
+        app.context = update_context({}, [])
+        md = apply_project_instructions(app.context)
 
     app.reload_session_view()
     app.chat_append("system", note)
-    app.tui_set_status(_short_status(note) or "Cleared")
-
+    status = md.status if md.status else (_short_status(note) or "Cleared")
+    app.tui_set_status(status)
 
 def _handle_skill(app: HarnessApp, query: str) -> None:
     from harness.loop import agent_lock

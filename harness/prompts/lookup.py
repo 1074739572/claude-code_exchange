@@ -98,12 +98,13 @@ LOOKUP_CONSTRAINT = (
     "mcp__fetch__fetch。禁止对 google.com / baidu.com / bing.com 搜索页做 fetch"
     "（robots/验证码会失败）。OpenReview / OpenAlex / 学院官网直接开页即可。\n"
     "禁止反复抓同一大页（如会议 Schedule / proceedings 目录）塞进对话。\n"
-    "预算：联网类调用尽量 ≤6 次；连续无新信息就收口回答，不要换 URL 硬试。\n"
+    "效率：有答案就收口，不要为凑证据无限联网；连续无新信息就换策略或回答。"
+    "没有固定次数硬顶（除非环境变量开了 fetch limit）。\n"
     "收口：先回答用户「有/没有」，再附来源；不要为了「拿证据」而无限抓页。\n"
     "篇幅：最终回答 ≤8 行；追问单位/作者时用 1–3 句直接说清归属，"
     "禁止再铺大表或复述整篇检索过程。\n"
-    "护栏：LookupGuard 会硬性拦截超预算/连续无效联网调用，被拦后必须文字回答用户"
-    "（用本轮已读到的证据，不要编造具体细节）。\n"
+    "护栏：LookupGuard 会拦截近重复搜索、连续无效搜索、已失败 URL/host；"
+    "被拦后必须文字回答用户（用本轮已读到的证据，不要编造具体细节）。\n"
 )
 
 _LOOKUP_MARKER = "[Lookup mode — auto]"

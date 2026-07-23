@@ -1,6 +1,6 @@
 # 002 — API 缓存命中率优化（与 001 Todo 防偏移的权衡）
 
-**状态：** 分层已落地 + 实验框架可用（2026-07）  
+**状态：** 静动态分层 + append-only 历史 + 检查点压缩已落地（2026-07）
 **关联：** [001 偏移](./001-todo-drift.md) · [004 压缩](./004-context-compaction.md)（时间分钟级利于 ephemeral 缓存）  
 **日期：** 2026-07
 
@@ -114,8 +114,9 @@ messages →  历史 + tool 结果 + 用户话
 | `Current time: datetime.now()` | s20 模板 | **极大**：每秒改 system 开头 |
 | todos / model / mode 在 system | 001 + 多模型功能 | 大：一改就断前缀 |
 | 每轮完整 ephemeral（秒级时间） | Phase 1 初版 | 中：增加每轮 miss 尾巴 |
-| 大段 tool 结果 | agent 常态 | 正常：算 miss，但不应拖死 hit |
-| compact / 换模型 | 长会话 | 前缀作废，冷启动 |
+| 大段 tool 结果首次进入 | agent 常态 | 新尾巴算 miss；必须在入历史前限制 |
+| 逐轮 micro/snip 改写旧历史 | 旧压缩链 | **极大**：历史中段改变，后续前缀全部失效 |
+| 检查点 compact / 换模型 | 长会话 | 前缀作废，但只产生一次可解释冷启动 |
 
 ### 3.2 system 里那些动态块从哪来
 
@@ -205,6 +206,31 @@ API 请求
 | `HARNESS_EPHEMERAL_POLICY` | `if_unchanged` | 会话块未变则不发，提高命中率 |
 | 设为 `always` | — | 每轮都发 session 块（调试 / 对比用） |
 
+### 5.4 Phase 2 — append-only 历史
+
+进一步分析真实 DeepSeek 长任务后发现：静态 system 已稳定，但旧
+`prepare_context()` 每轮执行 `tool_result_budget → snip_compact → micro_compact`，
+会渐进改写已经发过的 tool result。精确前缀缓存因此仍会在工具循环中反复断裂。
+
+现改为：
+
+1. `build_user_content()` 在 tool result 首次追加前统一调用 `stabilize_tool_results()`；
+2. 单结果默认最多 `12000` 字符，并行轮共享 `40000` 字符；
+3. 超限全文落盘，模型只收到一次定型的头尾 preview + `read_file` 路径；
+4. 未达到上下文阈值时，`prepare_context()` 不修改历史；
+5. 只在主动 token 阈值或 API prompt-too-long 时做一次检查点压缩。
+
+相关配置：
+
+```bash
+HARNESS_TOOL_RESULT_MAX_CHARS=12000
+HARNESS_TOOL_ROUND_MAX_CHARS=40000
+HARNESS_AUTOCOMPACT_PCT=83.5
+```
+
+预期曲线从“旧结果不断变化、连续 miss”变为“每轮只新增尾巴、hit 前缀持续增长；
+检查点处冷启动一次，然后重新增长”。
+
 ---
 
 ## 六、实验结果与怎么解读
@@ -212,7 +238,7 @@ API 请求
 ### 6.1 离线模拟（不耗 API）
 
 ```bash
-python scripts/run_cache_experiment.py --rounds 8 --detail
+python scripts/run_cache_experiment.py --rounds 8
 python -m unittest tests.test_cache_experiment tests.test_usage -v
 ```
 
@@ -228,10 +254,10 @@ current                 75.2%   total_hit 17097   total_miss 5631
 ### 6.2 Live API（DeepSeek `deepseek-v4-flash`）
 
 ```bash
-python scripts/run_cache_experiment.py --live --rounds 5
+python scripts/run_cache_experiment.py --live --rounds 7 --result-chars 20000
 ```
 
-实测（2026-07）：
+Phase 1 静动态分层实测（2026-07）：
 
 ```text
 round 1: api hit=3200  miss=71   (~98%)
@@ -242,6 +268,8 @@ round 5: api hit=3840  miss=123   (~97%)
 
 Live totals: hit=17664  miss=421  rate=97.7%
 ```
+
+Phase 2 append-only 的旧/新历史 A/B 结果见 [013](./013-append-only-history-cache.md)：warm hit rate 从 **26.3%** 提升到 **76.8%**，warm miss token 减少 **74.6%**。
 
 **解读：**
 
@@ -303,11 +331,10 @@ Live totals: hit=17664  miss=421  rate=97.7%
 
 ```bash
 # 离线对比策略
-python scripts/run_cache_experiment.py --rounds 8 --detail
+python scripts/run_cache_experiment.py --rounds 8
 
-# 真 API 抽样
-python scripts/run_cache_experiment.py --live --rounds 5
-python scripts/run_cache_experiment.py --live --rounds 5 --strategy current   # 对比：每轮都发 session 块
+# 真 API：旧版渐进改写 vs 新版 append-only
+python scripts/run_cache_experiment.py --live --rounds 7 --result-chars 20000
 ```
 
 ### 8.3 验收标准
@@ -341,7 +368,7 @@ python scripts/run_cache_experiment.py --live --rounds 5 --strategy current   # 
 | `harness/loop.py` | 调用与 reset 钩子 |
 | `harness/llm.py` | `[cache]` 日志 |
 | `harness/project/session.py` | 剥 ephemeral 不落盘 |
-| `scripts/run_cache_experiment.py` | `--detail` / `--live` / `--strategy` |
+| `scripts/run_cache_experiment.py` | 离线 prompt 分层模拟；`--live` 运行历史改写 A/B |
 | `tests/test_cache_experiment.py` | 离线断言 |
 | `tests/test_usage.py` | usage 解析测试 |
 

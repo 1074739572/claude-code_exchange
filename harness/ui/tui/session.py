@@ -44,6 +44,13 @@ def run_agent_turn(history: list, context: dict, query: str) -> dict:
             "context": context,
         }
 
+    from harness.modes import note_user_query_for_mode
+
+    gate_note = note_user_query_for_mode(query)
+    if gate_note:
+        BRIDGE.push_status(gate_note)
+        renderer.muted(gate_note)
+
     hook_result = trigger_hooks("UserPromptSubmit", query)
     model_query = hook_result if isinstance(hook_result, str) else query
 

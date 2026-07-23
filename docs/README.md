@@ -14,6 +14,9 @@
 | 问题编号与关联关系 | [bugs/README.md](./bugs/README.md) |
 | 本地能力回归怎么评 | [evals.md](./evals.md) |
 | 本地 RAG 仿写怎么接 | [rag.md](./rag.md) |
+| RAG 从纯文本到 PDF 图表的演进与选型 | [rag-evolution.md](./rag-evolution.md) |
+| RAG 解析、检索、回答怎么分层评测 | [rag-evaluation.md](./rag-evaluation.md) |
+| 项目说明书 HARNESS.md | [project-instructions.md](./project-instructions.md) |
 | 工具注册 / 调用 / 权限 | [tools.md](./tools.md) |
 | 2026-07-07 大改总览 | [CHANGELOG-2026-07-07.md](./CHANGELOG-2026-07-07.md) |
 | 2026-07-12 会话 / lookup / 评测 | [CHANGELOG-2026-07-12.md](./CHANGELOG-2026-07-12.md) |

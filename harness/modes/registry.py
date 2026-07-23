@@ -19,6 +19,8 @@ class ModeProfile:
     lead_model_hint: str | None
     enable_task: bool
     disable_tools: frozenset[str]
+    builtin_skills: tuple[str, ...] = ()
+    confirm_before_execute: bool = False
 
 
 def _builtin_fallback() -> dict:
@@ -63,6 +65,9 @@ def get_mode_profile(mode_id: str) -> ModeProfile | None:
     if not entry:
         return None
     hint = entry.get("lead_model_hint")
+    skills = entry.get("builtin_skills") or []
+    if isinstance(skills, str):
+        skills = [skills]
     return ModeProfile(
         id=mode_id,
         label=entry.get("label", mode_id),
@@ -71,11 +76,12 @@ def get_mode_profile(mode_id: str) -> ModeProfile | None:
         lead_model_hint=hint if hint else None,
         enable_task=bool(entry.get("enable_task", False)),
         disable_tools=frozenset(entry.get("disable_tools") or []),
+        builtin_skills=tuple(str(name).strip() for name in skills if str(name).strip()),
+        confirm_before_execute=bool(entry.get("confirm_before_execute", False)),
     )
 
 
 def format_mode_catalog() -> str:
-    current_hint = ""
     lines = ["Available modes (edit config/modes.json to add your own):"]
     for mode_id in list_mode_ids():
         profile = get_mode_profile(mode_id)
@@ -87,6 +93,10 @@ def format_mode_catalog() -> str:
             lines.append(f"    {profile.summary}")
         if profile.enable_task:
             lines.append("    task tool: on")
+        if profile.confirm_before_execute:
+            lines.append("    confirm-before-execute: on (tools locked until 确认执行/go)")
+        if profile.builtin_skills:
+            lines.append(f"    builtin skills: {', '.join(profile.builtin_skills)}")
         if profile.disable_tools:
             lines.append(f"    disabled tools: {', '.join(sorted(profile.disable_tools))}")
     lines.append("\nSwitch: /mode <id>  or  /mode (picker)")

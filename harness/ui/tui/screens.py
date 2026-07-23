@@ -1,4 +1,7 @@
-"""Inline picker + permission modal for Textual TUI."""
+"""Legacy permission modal kept for import compatibility.
+
+The active permission path now uses HarnessApp's same-page interaction panel.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +13,7 @@ from textual.widgets import Label, Static
 
 
 class AllowModal(ModalScreen[bool | None]):
-    """y = allow, n/Enter = deny, Esc = cancel.
-
-    Permission stays a modal (must block the worker). Model/mode pickers
-    live inline under Answer — see HarnessApp.open_inline_picker.
-    """
+    """Deprecated modal fallback; new code uses ``tui_request_permission``."""
 
     BINDINGS = [
         Binding("y", "allow", "Allow", show=True),

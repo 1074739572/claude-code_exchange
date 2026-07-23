@@ -40,6 +40,7 @@ cd learn-claude-code
 | MCP 权限元数据 | 用 `destructive` 等元数据驱动确认，而不是按名字硬匹配 |
 | 多模型 Provider | Anthropic + OpenAI 兼容路由；CLI `/model` 选择 |
 | 本地 RAG | hybrid BM25+向量、parent-child 切块、`/rag` CLI、`/mode file` 文档问答 | [rag](docs/rag.md) · [CHANGELOG-07-15](docs/CHANGELOG-2026-07-15.md) |
+| 项目说明书 | 启动读 `HARNESS.md`（回退 `AGENTS.md`）→ ephemeral；GAIA 默认关闭 | [project-instructions](docs/project-instructions.md) |
 
 ### 会话与任务（真实使用踩坑后）
 
@@ -51,6 +52,7 @@ cd learn-claude-code
 | 任务落锚 | Resolve→Act→Close；GroundingGuard；禁 tool 参数写假设 | [005](docs/bugs/005-tool-loop-drift.md) · [07-15](docs/CHANGELOG-2026-07-15.md) |
 | 中断与回滚 | Esc / SIGINT 停当前轮；orphan `tool_use` 修复，避免 API 400 | [001](docs/bugs/001-todo-drift.md) |
 | Prompt 缓存分层 | static / dynamic / ephemeral 分离，提高 cache hit | [002](docs/bugs/002-prompt-cache-vs-dynamic-context.md) |
+| 项目说明书 | `HARNESS.md` → 否则 `AGENTS.md`；session 启动注入 ephemeral | [project-instructions](docs/project-instructions.md) |
 | 上下文压缩 | compact 保留尾部；结构化摘要；micro_compact 落盘；按模型自适应预算 | [004](docs/bugs/004-context-compaction.md) |
 
 ### 交互与体验
@@ -171,8 +173,9 @@ Changed files:
 默认只展示 **每一步在做什么**（意图 + 工具名/路径），成功结果不刷屏；完整 tool_result 仍进对话给模型。回合结束列出本轮 `write_file` / `edit_file` 改过的文件。错误与 Guard 拦截仍会显示 `→`。每轮 LLM 的 cache hit/miss、compact 落盘路径默认不打印（避免盖住最终 Assistant 面板）；需要时设 `HARNESS_VERBOSE=1`。
 
 - `HARNESS_VERBOSE=1` 恢复 `[HOOK]` / `[cache]` / `[compact] transcript` 调试行
+- 项目说明书：cwd 向上找 `HARNESS.md` / `AGENTS.md`（`HARNESS_PROJECT_MD=0` 关闭）
 - 同一工具+相同参数连续调用满 3 次会被拦截（`HARNESS_REPEAT_LIMIT`），避免死循环刷屏
-- 查找题（lookup mode）联网 fetch 默认 ≤6 次（`HARNESS_LOOKUP_FETCH_LIMIT`）；连续 2 次无效结果会硬拦截（`HARNESS_LOOKUP_STALE_LIMIT`）
+- 查找题（lookup mode）：**默认无联网次数硬顶**；仍拦近重复搜索、连续无效搜索、失败 URL/host（`HARNESS_LOOKUP_*`）。若要硬顶：`HARNESS_LOOKUP_FETCH_LIMIT=N`
 
 提示符形如 `[qwen-max] >`。`/usage` 查看今日输入/输出/命中率（字符直方图）；`/usage week|month|year` 看历史。数据在 `.project/usage/`，`/clear` 不会删。
 

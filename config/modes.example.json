@@ -14,6 +14,21 @@
         "spawn_teammate"
       ],
       "prompt": "Execution mode: MY-REVIEW (custom)\n- Read-only: use read_file and glob only.\n- Output findings as a structured review (severity, file, suggestion).\n- Do not modify any files.\n- End with a short todo_write checklist if fixes are needed later."
+    },
+    "my-grill": {
+      "label": "自定义 · 确认后执行",
+      "summary": "示例：内置 skill + 确认门闩",
+      "enable_task": false,
+      "confirm_before_execute": true,
+      "builtin_skills": ["grill-me"],
+      "disable_tools": [
+        "write_file",
+        "edit_file",
+        "bash",
+        "task",
+        "spawn_teammate"
+      ],
+      "prompt": "Execution mode: MY-GRILL\n- Follow builtin grill-me.\n- Stay locked until the user confirms."
     }
   }
 }

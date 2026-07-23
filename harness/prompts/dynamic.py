@@ -7,7 +7,12 @@ from datetime import datetime
 from typing import Literal
 
 from harness.models import get_model, get_model_profile, model_label
-from harness.modes import mode_lead_model_hint, mode_prompt_section
+from harness.modes import (
+    mode_builtin_skills_section,
+    mode_lead_model_hint,
+    mode_prompt_section,
+)
+from harness.prompts.project_md import format_project_instructions_block
 from harness.providers.config import get_provider
 from harness.settings import WORKDIR
 from harness.todos.format import format_todos_for_prompt
@@ -42,6 +47,7 @@ def build_session_context(
     include_mcp: bool = True,
     include_teammates: bool = True,
     include_todos: bool = True,
+    include_project_instructions: bool = True,
 ) -> str:
     """Dynamic harness state for the model (ephemeral message body, not static system)."""
     sections: list[str] = []
@@ -69,6 +75,9 @@ def build_session_context(
 
     if include_mode:
         sections.append(mode_prompt_section())
+        builtin = mode_builtin_skills_section()
+        if builtin:
+            sections.append(builtin)
         hint = mode_lead_model_hint()
         current = get_model()
         if hint and current != hint:
@@ -76,6 +85,11 @@ def build_session_context(
                 f"Mode lead hint: {hint} is recommended for this mode "
                 f"(current: {current}). Switch with /model if needed."
             )
+
+    if include_project_instructions:
+        project_block = format_project_instructions_block(context)
+        if project_block:
+            sections.append(project_block)
 
     if include_memories and context.get("memories"):
         sections.append(f"Relevant memories:\n{context['memories']}")

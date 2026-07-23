@@ -1,6 +1,6 @@
-"""Cancel-aware Allow? [y/N] prompts (Esc / Ctrl+C must not leave input() stuck).
+"""Cancel-aware permission prompts for classic and Textual interfaces.
 
-When Textual TUI is active, the prompt is a Modal owned by the App (P1).
+Textual uses an inline panel; classic keeps the y/N terminal prompt.
 """
 
 from __future__ import annotations
@@ -10,6 +10,32 @@ import time
 
 from harness.agent.cancel import is_cancelled, request_cancel
 from harness.ui.interrupt_listener import pause_key_poll, resume_key_poll
+from harness.ui.tui.events import PermissionResponse
+
+
+def ask_permission(
+    prompt: str = "  Allow? [y/N] ",
+    *,
+    detail: str | None = None,
+    title: str | None = None,
+    editable: bool = False,
+) -> PermissionResponse:
+    """Return a structured decision and an optionally edited value."""
+    from harness.ui.tui.mode import is_tui_active
+
+    body = (detail if detail is not None else prompt).strip()
+    if is_tui_active():
+        from harness.ui.tui.bridge import BRIDGE
+
+        return BRIDGE.ask_permission(
+            body or "(no detail)",
+            title=title or "Allow destructive command?",
+            editable=editable,
+        )
+
+    choice = ask_allow(prompt, detail=detail, title=title)
+    decision = "cancel" if choice is None else ("allow" if choice else "deny")
+    return PermissionResponse("classic-permission", decision, body)
 
 
 def ask_allow(

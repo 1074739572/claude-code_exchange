@@ -26,6 +26,7 @@ from harness.project.resume import (
     should_auto_inject_project_on_startup,
 )
 from harness.project.session_store import bootstrap_session
+from harness.prompts.project_md import apply_project_instructions
 from harness.tasks import reconcile_task_board
 from harness.todos.state import load_todos_from_disk
 from harness.project.session_undo import abort_inflight_turn, undo_last_turn
@@ -55,8 +56,9 @@ def _match_cli_command(query: str, command: str) -> bool:
 def _help_text() -> str:
     return """Commands:
   /model                   pick model (↑↓ Enter) or /model <id>
-  /mode [id]               pick mode (↑↓ Enter): direct|plan|orchestrate|file
+  /mode [id]               pick mode (↑↓ Enter): direct|plan|orchestrate|file|grill
   /mode file               文档问答：每句检索 files/；进模式时选指定/全部文档
+  /mode grill              拷问模式：内置 grill-me，确认执行前不改代码
   /usage [today|week|month|year|YYYY-MM-DD|YYYY-MM|YYYY]
                            local token stats + hit rate (bars; kept across /clear)
   /undo                    cancel last completed question + reply
@@ -159,9 +161,15 @@ def bootstrap_cli_session(
     context = update_context({}, history if history else [])
     if session_source:
         context["session_source"] = session_source
+    project_md = apply_project_instructions(context)
 
     if welcome:
         render_welcome(session_source=session_source)
+        # UI-only: loaded source, none, disabled, or truncated — not sent to the model.
+        if project_md.truncated:
+            renderer.warn(project_md.status)
+        else:
+            renderer.muted(project_md.status)
 
         banner = resume_banner()
         if banner:
@@ -173,6 +181,8 @@ def bootstrap_cli_session(
         if ok:
             renderer.info(note)
             context = update_context(context, history)
+            # update_context spreads existing keys; re-assert after rebuilds.
+            apply_project_instructions(context)
 
     bootstrap_results = bootstrap_mcp_servers()
     for line in mcp_bootstrap_warnings(bootstrap_results):
@@ -261,6 +271,11 @@ def run_cli() -> None:
             renderer.plain(run_project_clear(clear_project=not keep_project))
             history.clear()
             context = update_context({}, [])
+            project_md = apply_project_instructions(context)
+            if project_md.truncated:
+                renderer.warn(project_md.status)
+            else:
+                renderer.muted(project_md.status)
             print()
             continue
         if query.strip().lower() in ("/transcripts", "/list-transcripts"):
@@ -319,7 +334,7 @@ def run_cli() -> None:
             context = update_context(context, history)
             print()
             continue
-        from harness.modes import get_mode
+        from harness.modes import get_mode, note_user_query_for_mode
         from harness.rag.file_mode import handle_file_mode_turn, is_file_mode
 
         # File mode: every normal message is document Q&A (RAG → answer).
@@ -329,6 +344,10 @@ def run_cli() -> None:
             renderer.plain(handle_file_mode_turn(query))
             print()
             continue
+
+        gate_note = note_user_query_for_mode(query)
+        if gate_note:
+            renderer.muted(gate_note)
 
         hook_result = trigger_hooks("UserPromptSubmit", query)
         # user_prompt_hook may return an augmented query (e.g. lookup-mode

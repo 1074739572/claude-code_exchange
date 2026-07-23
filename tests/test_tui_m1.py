@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import unittest
 from unittest import mock
 
@@ -74,17 +75,18 @@ class TuiImportTests(unittest.TestCase):
     def test_renderer_routes_to_bridge_when_tui_active(self):
         from harness.ui.renderer import renderer
         from harness.ui.tui.bridge import BRIDGE
+        from harness.ui.tui.events import ToolEvent
         from harness.ui.tui.mode import set_tui_active
 
-        steps: list[str] = []
+        tools: list[ToolEvent] = []
         finals: list[str] = []
 
         class FakeApp:
             def call_from_thread(self, fn, *args):
                 fn(*args)
 
-            def tui_append_step(self, line: str) -> None:
-                steps.append(line)
+            def tui_tool_event(self, event: ToolEvent) -> None:
+                tools.append(event)
 
             def tui_set_answer(self, text: str) -> None:
                 finals.append(text)
@@ -110,7 +112,7 @@ class TuiImportTests(unittest.TestCase):
         try:
             renderer.tool_start("bash", {"command": "echo hi"})
             renderer.assistant("# Hello\n\nworld")
-            self.assertTrue(any("bash" in s for s in steps))
+            self.assertTrue(any(event.name == "bash" for event in tools))
             self.assertTrue(any("Hello" in f for f in finals))
         finally:
             BRIDGE.unbind()
@@ -130,18 +132,29 @@ class TuiImportTests(unittest.TestCase):
         self.assertTrue(dispatch_slash(FakeApp(), "/rag status"))
         self.assertEqual(calls, ["/rag status"])
 
+    def test_test_directory_name_does_not_force_background(self):
+        from harness.agent.background import is_slow_operation
+
+        self.assertFalse(
+            is_slow_operation(
+                "bash",
+                {"command": r"python scripts\read_sheet.py test\gaia_dataset.xlsx"},
+            )
+        )
+        self.assertTrue(is_slow_operation("bash", {"command": "python -m pytest -q"}))
+
     def test_ask_allow_uses_bridge_in_tui(self):
         from harness.ui.permission_prompt import ask_allow
         from harness.ui.tui.bridge import BRIDGE
+        from harness.ui.tui.events import PermissionResponse
         from harness.ui.tui.mode import set_tui_active
 
         class FakeApp:
             def call_from_thread(self, fn, *args):
                 fn(*args)
 
-            def push_screen(self, screen, callback=None):
-                if callback:
-                    callback(True)
+            def tui_request_permission(self, request, callback):
+                callback(PermissionResponse(request.request_id, "allow", request.detail))
 
         set_tui_active(True)
         BRIDGE.bind(FakeApp())
@@ -402,6 +415,55 @@ class TuiShutdownSinkTests(unittest.TestCase):
         composer_keys = {b.key: b.action for b in ComposerTextArea.BINDINGS}
         self.assertEqual(composer_keys.get("enter"), "composer_submit")
         self.assertEqual(composer_keys.get("shift+enter"), "composer_newline")
+
+
+class TuiInlineInteractionTests(unittest.TestCase):
+    def test_permission_tool_card_and_answer_stay_on_same_screen(self):
+        from textual.containers import Vertical
+
+        from harness.agent.cancel import clear_cancel
+        from harness.ui.tui.app import HarnessApp
+        from harness.ui.tui.events import PermissionRequest, ToolEvent
+        from harness.ui.tui.widgets import ToolCard
+
+        async def scenario():
+            app = HarnessApp([], {})
+            responses = []
+            async with app.run_test(size=(120, 40)) as pilot:
+                request = PermissionRequest(
+                    "p1",
+                    "Allow destructive command?",
+                    "rm old.txt",
+                    editable=True,
+                )
+                app.tui_request_permission(request, responses.append)
+                await pilot.pause()
+                self.assertTrue(app.query_one("#interaction-panel", Vertical).display)
+                app.query_one("#interaction-input").value = "rm safe.txt"
+                await pilot.click("#interaction-allow")
+                await pilot.pause()
+                self.assertEqual(responses[0].decision, "allow")
+                self.assertEqual(responses[0].value, "rm safe.txt")
+                self.assertFalse(app.query_one("#interaction-panel", Vertical).display)
+
+                app.tui_tool_event(
+                    ToolEvent("tool-1", "read_file", "a.py", "running")
+                )
+                app.tui_tool_event(
+                    ToolEvent("tool-1", "read_file", "a.py", "ok", "Completed")
+                )
+                await pilot.pause()
+                card = app.query_one(ToolCard)
+                self.assertIn("✓", str(card.title))
+
+                app.tui_set_answer("Done")
+                await pilot.pause()
+                self.assertTrue(app.query_one("#answer-dock", Vertical).display)
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            clear_cancel()
 
 
 if __name__ == "__main__":

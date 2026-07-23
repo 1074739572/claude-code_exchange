@@ -1,4 +1,4 @@
-# 008 — Textual TUI
+# 008 — Textual TUI（M2 同页交互）
 
 ## 痛点
 
@@ -10,12 +10,47 @@
 |----|------|
 | 图标 | Emoji |
 | 主区 | **单框聊天历史**（合并原 Steps+Answer） |
-| 工具行 | H1 全进同一时间线 |
+| 工具行 | 结构化可折叠卡片；running / ok / failed / blocked 原位更新 |
 | 灌历史 | S1 启动加载当前 session |
-| 顶栏 | 今日用量 + 周用量 |
-| 聊天下方 | 🤖 模型 · 🧭 模式 · 状态（可点展开内联列表 B2） |
+| 顶栏 | 今日/周用量、缓存命中率 |
+| 聊天下方 | 🤖 模型 · 🧭 模式 · context/cache 实时指标 · 状态 |
 | 终答 | R3 Markdown；User/工具纯文本 |
-| 权限 | Allow? 仍 Modal |
+| 权限 | **同页内联面板**；允许 / 拒绝 / 取消；bash 命令可编辑后允许 |
+
+## M2：不再跳屏
+
+权限确认不再 `push_screen(AllowModal)`。工作线程通过 `TuiBridge.ask_permission()`
+等待，主线程在当前 footer 内展示 `#interaction-panel`，用户选择后用
+`PermissionResponse` 唤醒工作线程。这样仍保留“工具执行前必须阻塞”的安全语义，
+但不会失去当前对话、工具上下文和输入框。
+
+- destructive bash 会展示并允许编辑命令；编辑后的值回写本次 `tool_input`
+- MCP destructive tool 使用同一面板，但工具名只读
+- Esc 在权限面板打开时仅取消这次授权，不会先中断整轮任务
+- 旧 `AllowModal` 只为导入兼容保留，不在正常路径使用
+
+结构化事件集中在 `harness/ui/tui/events.py`。Renderer 不再把 TUI 工具调用先压成
+不可恢复的字符串，而是发送带 `tool_use_id` 的 `ToolEvent`。工具卡从 running
+原位更新为 ok / failed / blocked；连续重复调用合并到上一张卡并显示 `×N`。
+重新加载 session 时，`chat_history.iter_history_items()` 会配对 tool_use/tool_result，
+所以历史与实时展示使用同一种卡片。
+
+## 固定信息区
+
+- 最终答案同时进入聊天历史和 `#answer-dock`，当前轮可一直看到，无需滚动找回
+- `#progress-strip` 显示理解目标 → 当前工具 → 回答的简短阶段
+- 后台命令通过 `BackgroundEvent` 进入 `#background-tray`，展示运行与完成状态；
+  启动消息不再用绕过 TUI 的裸 `print`
+- meta 行显示当前 context 占比、最近一次 API cache hit rate，以及 tool/net 健康灯；
+  顶栏显示今日/周累计
+- 相同连续 step 日志在 widget 层原位计数，避免时间线被重复文本刷屏
+
+## 输入区增强
+
+- 输入 `/` 时内联显示命令提示
+- Ctrl+↑ / Ctrl+↓ 浏览本次 TUI 的输入历史
+- `/usage [today|week|month|year]` 可直接在 TUI 查看 token 与缓存统计
+- 原有 Enter 发送、Shift+Enter 换行、Ctrl+Enter 发送、Esc 停止保持不变
 
 ## 打断 / 退出（X1 · B2 · U1）
 
@@ -24,7 +59,7 @@
 | 退出 TUI | `request_cancel` + 吞掉 console 输出；等当前轮结束后再退 |
 | 主按钮 | 空闲 **发送** / 忙碌 **停止**（Enter / Ctrl+Enter 同；Esc = 停止） |
 | Ctrl+C | **不退出**（吞掉 Textual help_quit）；复制用终端拖选 / Ctrl+Shift+C；退出用 Ctrl+Q |
-| 输入区 | **TextArea** 多行：Enter 发送；**Shift+Enter** 换行；高度约 3–8 行 |
+| 输入区 | **TextArea** 多行：Enter 发送；Shift+Enter 换行；Ctrl+↑/↓ 历史；高度约 3–8 行 |
 | 停止效果 | 回滚本轮 history + 撕掉 `turn-live` 气泡 + 输入框预填原问题 |
 | 终端复位 | 启动前 / 退出后 / `atexit` 清鼠标上报与 alt-screen（防 `^[[<…M` 花屏） |
 
@@ -67,6 +102,7 @@ python -m harness.ui.tui.quotes today
 | `/clear` | 清对话 + 默认清 `state.json` |
 | `/clear session` | 只清对话，保留长任务 |
 | `/skill` | 列 skill + picker；`/skill <name>` 注入全文（Chat 仅短提示） |
+| `/usage` | 在 Chat 展示 token、cache hit rate 与模型分项 |
 
 忙碌中禁止切换；需先 Stop。
 
@@ -74,9 +110,12 @@ python -m harness.ui.tui.quotes today
 
 | 路径 | 作用 |
 |------|------|
-| `harness/ui/tui/app.py` | 布局 · 聊天流 · meta · picker · `reload_session_view` |
-| `harness/ui/tui/commands.py` | `/model` `/mode` `/resume` `/clear` |
-| `harness/ui/tui/chat_history.py` | session → 聊天事件 |
-| `harness/ui/tui/usage_bar.py` | 顶栏用量 |
-| `harness/ui/tui/widgets.py` | 可点 MetaChip |
-| `harness/ui/renderer.py` | TUI exclusive sink |
+| `harness/ui/tui/app.py` | 布局 · 同页权限 · 工具/后台状态 · 固定终答 · composer |
+| `harness/ui/tui/events.py` | Tool / Background / Permission / RuntimeMetrics 事件模型 |
+| `harness/ui/tui/bridge.py` | worker → Textual 主线程；权限等待与指标合并 |
+| `harness/ui/tui/commands.py` | `/model` `/mode` `/resume` `/clear` `/usage` |
+| `harness/ui/tui/chat_history.py` | session → 结构化聊天与工具事件 |
+| `harness/ui/tui/usage_bar.py` | 顶栏用量与 cache hit rate |
+| `harness/ui/tui/widgets.py` | 可点 MetaChip、可折叠 ToolCard |
+| `harness/ui/renderer.py` | TUI exclusive sink；结构化工具事件入口 |
+| `harness/agent/background.py` | 后台任务状态事件；精确慢命令识别 |

@@ -1,95 +1,59 @@
 ---
-name: "grill-me"
-description: "Conducts deep code review interrogation. Invoke when user types /grill-me to grill them with pointed questions about potential issues, bugs, and bad practices in their code."
+name: grill-me
+description: >-
+  Relentlessly grill a plan, decision, or request until shared understanding.
+  Built into /mode grill; also usable via /skill grill-me.
 ---
 
-# Grill Me - 代码审查拷问
+# Grill Me — 先拷问，再执行
 
-当用户输入 `/grill-me` 时触发此技能。该技能会对用户当前正在编辑的代码进行深度审查，并以"拷问"的方式（快问快答）向用户提出尖锐的技术问题，帮助用户发现并理解代码中的潜在问题。
+Interview the user relentlessly about every aspect of their request, plan, or
+idea until you reach a **shared understanding**. Then stop and wait for an
+explicit confirmation before doing any real work.
 
-## 触发条件
+## Core rules
 
-- 用户输入 `/grill-me`（精确匹配此命令）
-- 如果用户在 `/grill-me` 后指定了文件路径或行号范围，则针对指定位置拷问；否则针对当前 IDE 打开的文件
+1. **Parse first.** Restate the user's goal in 1–2 sentences, then start grilling.
+2. **One question at a time.** Wait for their answer before the next question.
+   Asking multiple questions at once is bewildering.
+3. **For each question, offer your recommended answer** (with a short why).
+4. **Facts vs decisions.** If a fact can be found with tools (filesystem, docs,
+   code), look it up instead of asking. Decisions belong to the user — put each
+   one to them.
+5. **Do not act** (no writes, edits, installs, commits, deployments, or other
+   irreversible work) until the user explicitly confirms shared understanding.
 
-## 执行流程
+## Question style
 
-### 步骤 1：确定审查目标
+- Walk decision-tree branches one by one; resolve dependencies in order.
+- Prefer sharp, concrete choices over open essays:
+  - "A or B? I recommend A because …"
+  - "What should happen on failure — retry, abort, or degrade?"
+- Cover: goal/success criteria, scope in/out, constraints, risks, rollback,
+  and "what would make this the wrong approach?"
+- Keep each turn short (2–4 sentences + one question).
 
-1. 优先使用 `<system-reminder>` 中提示的"用户当前打开的文件"作为审查目标
-2. 如果用户在 `/grill-me` 后附加了文件路径或行号范围，则使用该指定范围
-3. 如果没有任何文件被打开且未指定路径，则提示用户："请先打开一个文件，或在 `/grill-me` 后指定文件路径"
+## When to stop grilling
 
-### 步骤 2：读取并分析代码
+When the remaining unknowns no longer block correct execution:
 
-使用 `Read` 工具读取目标代码（支持行号范围）。分析时关注以下维度：
+1. Summarize the agreed plan in a short numbered list.
+2. List open risks or assumptions that still matter.
+3. Ask for confirmation with a clear cue, e.g.:
+   - 「以上理解是否一致？回复 **确认执行** / **开始** 后我才动手。」
+   - "If this matches, reply **go** / **proceed** and I'll execute."
 
-- **正确性**：逻辑错误、边界条件、空指针、类型转换、异常处理
-- **性能**：不必要的循环嵌套、O(n²) 操作、数据库查询 N+1、资源未释放
-- **并发安全**：竞态条件、锁粒度、线程安全集合的误用
-- **安全**：SQL 注入、敏感信息日志、权限校验缺失
-- **可维护性**：命名、魔法数字、重复代码、过度设计
-- **最佳实践**：违反语言/框架惯例、已废弃 API
+## After confirmation
 
-### 步骤 3：开始拷问（交互式，逐题进行）
+Only after the user confirms:
 
-**关键规则：一次只问一个问题，等用户回答后再问下一个。**
+- Execute the agreed plan.
+- Do not reopen settled decisions unless new evidence appears.
+- If the user starts a clearly new goal, return to grilling (locked) mode.
 
-每轮拷问的格式：
+## Anti-patterns
 
-```
-🔥 拷问 #N：[问题简短标题]
-
-📍 位置：[文件名:行号](file:///绝对路径#L行号)
-
-❓ 问题：
-[用尖锐、引导性的方式提出问题，让用户思考"这里有什么问题"、"会发生什么"、"如何修复"]
-
-💡 提示：（可选，仅在用户卡住时给出）
-[简短的方向性提示，不直接给答案]
-```
-
-然后**停止输出**，等待用户回答。不要在一条消息里连发多个问题。
-
-### 步骤 4：评估回答
-
-根据用户回答：
-
-- **回答正确**：✅ 肯定，并给出简短补充说明，然后进入下一题
-- **部分正确**：🔶 指出遗漏的点，补充说明后进入下一题
-- **回答错误或"不知道"**：❌ 给出标准答案和修复示例代码，然后进入下一题
-- **用户要求跳过**：直接给出答案，进入下一题
-
-### 步骤 5：结束拷问
-
-当所有问题问完后，输出总结：
-
-```
-📊 拷问结束！本轮共 N 题
-
-| # | 问题 | 你的回答 | 结果 |
-|---|------|---------|------|
-| 1 | ... | ... | ✅/🔶/❌ |
-
-🎯 得分：X/N
-📝 建议：[针对薄弱项的改进建议]
-```
-
-## 拷问风格要求
-
-- **尖锐但不刻薄**：用"你确定这里不会出问题吗？"、"如果传入 null 会怎样？"等引导式提问
-- **聚焦"为什么"而非"是什么"**：不要直接指出"这里有 bug"，而是问"如果用户在并发场景下调用这段代码，会发生什么？"
-- **由浅入深**：先问明显的，再问隐藏的
-- **结合实际场景**：针对该代码的业务场景提问，而非泛泛而谈
-- **每题控制在 2-3 句话**：保持快问快答节奏
-
-## 数量限制
-
-单次拷问建议 **5-10 题**，避免过多导致疲劳。如果代码问题少于 5 个，则有多少问多少。
-
-## 注意事项
-
-- 拷问前先用 `Read` 确认文件内容，不要基于猜测提问
-- 问题必须基于**真实存在的代码**，不要凭空捏造问题
-- 代码示例使用 CODE REFERENCES 或 MARKDOWN CODE BLOCKS 格式
-- 如果代码已经很优秀，诚实地告诉用户"这段代码质量很高，没有明显问题"，不要硬凑问题
+- Do not silently start coding "just a little".
+- Do not dump a 20-question checklist in one message.
+- Do not ask for facts you can read from the repo yourself.
+- Do not treat vague agreement ("嗯", "随便") as confirmation to execute.

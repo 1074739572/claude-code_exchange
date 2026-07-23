@@ -13,21 +13,33 @@ from harness.prompts.sections import PROMPT_SECTIONS
 from harness.prompts.static import assemble_static_system_prompt
 
 
-def test_identity_is_resolve_act_close():
+def test_identity_is_product_not_coding_only():
+    """OpenHands/CC-style: thin product identity; coding is a mode, not the persona."""
     identity = PROMPT_SECTIONS["identity"]
-    assert "Resolve → Act → Close" in identity
-    assert "Do not write long plans before acting" not in identity
-    assert "Act, don't explain" not in identity
+    assert "You are Harness" in identity
+    assert "<ROLE>" in identity
+    assert "coding agent" not in identity.lower()
+    assert "Match the request" in identity or "whatever the user actually asked" in identity
+    assert "do not start editing" in identity.lower() or "unless they asked to" in identity
     assert "1–3 short sentences" in identity
+    assert "Resolve → Act → Close" not in identity  # lives in DIRECT mode prompt
 
 
 def test_static_prompt_includes_grounding():
     prompt = assemble_static_system_prompt()
+    assert "You are Harness" in prompt
     assert "Task grounding" in prompt
     assert "Working goal" in prompt
     assert "Never put assumptions" in prompt
-    # grounding comes after identity
-    assert prompt.index("Resolve → Act → Close") < prompt.index("Task grounding")
+    assert prompt.index("You are Harness") < prompt.index("Task grounding")
+
+
+def test_direct_mode_owns_resolve_act_close():
+    from harness.modes import get_mode_profile
+
+    direct = get_mode_profile("direct")
+    assert direct is not None
+    assert "Resolve → Act → Close" in direct.prompt
 
 
 def test_lookup_constraint_asks_before_guessing_slots():

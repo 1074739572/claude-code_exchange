@@ -66,16 +66,15 @@ def run_gaia_task(
     *,
     max_rounds: int = 50,
     bootstrap_mcp: bool = True,
-    web_fetch_limit: int = 10,
-    web_stale_limit: int = 2,
+    web_fetch_limit: int | None = None,
+    web_stale_limit: int = 3,
     context_limit: int | None = None,
     compact_tail: int = 10,
 ) -> dict[str, Any]:
     """Ask the agent one GAIA question; return answer + transcript summary.
 
-    ``context_limit`` is an optional absolute **token** threshold for
-    auto-compact. Default ``None`` uses Claude Code–style
-    ``0.835 × model_context_window`` (same as daily CLI).
+    ``web_fetch_limit``: optional hard cap on web tools (default None = unlimited,
+    same as daily CLI). ``context_limit``: optional absolute token compact threshold.
     """
     if bootstrap_mcp:
         try:
@@ -101,17 +100,22 @@ def run_gaia_task(
         messages,
     )
 
-    # Per-run budgets (LookupGuard + compaction). Absolute context_limit is
-    # optional; default follows pct × model window like daily CLI.
+    # Per-run budgets. Hard fetch count is off by default; other guards remain.
+    # Disable project HARNESS.md/AGENTS.md so this repo's handbook cannot bias scores.
     _env_overrides = {
-        "HARNESS_LOOKUP_FETCH_LIMIT": str(web_fetch_limit),
         "HARNESS_LOOKUP_STALE_LIMIT": str(web_stale_limit),
         "HARNESS_COMPACT_TAIL": str(compact_tail),
+        "HARNESS_PROJECT_MD": "0",
     }
+    if web_fetch_limit is not None:
+        _env_overrides["HARNESS_LOOKUP_FETCH_LIMIT"] = str(web_fetch_limit)
     if context_limit is not None:
         _env_overrides["HARNESS_CONTEXT_LIMIT"] = str(context_limit)
     _env_saved = {key: os.environ.get(key) for key in _env_overrides}
     os.environ.update(_env_overrides)
+    from harness.prompts.project_md import apply_project_instructions
+
+    apply_project_instructions(ctx)
 
     hit_cap = False
     try:

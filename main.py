@@ -82,6 +82,26 @@ def _parse_args() -> argparse.Namespace:
     rag_ask.add_argument("question", help="Your question")
     rag_ask.set_defaults(rag_handler="ask")
 
+    rag_eval = rag_sub.add_parser("eval", help="Run deterministic offline RAG evaluation")
+    rag_eval.add_argument(
+        "--corpus",
+        default=None,
+        help="Corpus path (default: evals/rag/fixtures/tiny_corpus)",
+    )
+    rag_eval.add_argument(
+        "--gold",
+        default=None,
+        help="Gold YAML path (default: evals/rag/gold_queries.yaml)",
+    )
+    rag_eval.add_argument(
+        "--embedding",
+        default="hash",
+        choices=("hash", "bge-m3", "openai", "auto"),
+        help="Evaluation embedding backend (default: hash, deterministic/offline)",
+    )
+    rag_eval.add_argument("--output", default=None, help="Optional JSON report path")
+    rag_eval.set_defaults(rag_handler="eval")
+
     return parser.parse_args()
 
 
@@ -114,6 +134,17 @@ def _run_rag_command(args: argparse.Namespace) -> int:
     if handler == "ask":
         print(run_rag_ask_command(args.question))
         return 0
+    if handler == "eval":
+        import os
+        from pathlib import Path
+
+        from harness.rag.eval import format_eval_report, run_eval
+
+        os.environ["HARNESS_RAG_EMBEDDING"] = args.embedding
+        gold = Path(args.gold) if args.gold else None
+        report = run_eval(args.corpus, gold, output_path=args.output)
+        print(format_eval_report(report))
+        return 0 if report["passed"] else 1
     print(f"Unknown rag handler: {handler}", file=sys.stderr)
     return 2
 

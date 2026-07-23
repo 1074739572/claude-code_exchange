@@ -17,6 +17,7 @@ from harness.ui.tool_display import (
     summarize_failure_output,
     summarize_tool_input,
 )
+from harness.ui.tui.events import ToolEvent
 
 try:
     from rich.console import Console
@@ -59,6 +60,9 @@ class _ShutdownSink:
         return None
 
     def set_busy(self, busy: bool) -> None:
+        return None
+
+    def push_tool(self, event: ToolEvent) -> None:
         return None
 
     def reset_turn(self, user_query: str = "", model: str = "") -> None:
@@ -158,8 +162,20 @@ class Renderer:
             preview = preview[:219] + "…"
         self._write(f"› {preview}", style=theme.MUTED)
 
-    def tool_start(self, name: str, tool_input: dict | None = None) -> None:
+    def tool_start(
+        self,
+        name: str,
+        tool_input: dict | None = None,
+        *,
+        tool_use_id: str = "",
+    ) -> None:
         summary = summarize_tool_input(name, tool_input)
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_tool(
+                ToolEvent(tool_use_id or f"{name}-current", name, summary, "running")
+            )
+            return
         detail = f"  {summary}" if summary else ""
         self._write(f"● {name}{detail}", style=theme.TOOL)
 
@@ -170,9 +186,22 @@ class Renderer:
         *,
         streak: int,
         blocked: bool = False,
+        tool_use_id: str = "",
     ) -> None:
         """Collapse identical consecutive calls instead of reprinting full lines."""
         summary = summarize_tool_input(name, tool_input)
+        bridge = _tui_bridge()
+        if bridge is not None:
+            bridge.push_tool(
+                ToolEvent(
+                    tool_use_id or f"{name}-repeat-{streak}",
+                    name,
+                    summary,
+                    "blocked" if blocked else "repeat",
+                    streak=streak,
+                )
+            )
+            return
         detail = f"  {summary}" if summary else ""
         if blocked:
             self._write(
@@ -192,7 +221,33 @@ class Renderer:
         *,
         name: str | None = None,
         tool_input: dict | None = None,
+        tool_use_id: str = "",
     ) -> None:
+        bridge = _tui_bridge()
+        if bridge is not None:
+            failed = is_failure_tool_output(preview)
+            low = preview.lower()
+            phase = (
+                "blocked"
+                if failed and ("blocked" in low or "permission denied" in low)
+                else ("failed" if failed else "ok")
+            )
+            summary = summarize_tool_input(name or "tool", tool_input)
+            result_preview = (
+                summarize_failure_output(preview)
+                if failed
+                else " ".join(str(preview).split())[:limit]
+            )
+            bridge.push_tool(
+                ToolEvent(
+                    tool_use_id or f"{name or 'tool'}-current",
+                    name or "tool",
+                    summary,
+                    phase,
+                    preview=result_preview,
+                )
+            )
+            return
         # Success results stay silent in the terminal (still go to the model).
         if not is_failure_tool_output(preview):
             return

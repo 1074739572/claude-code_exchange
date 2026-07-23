@@ -8,7 +8,7 @@ from harness.mcp.pool import mcp_tool_meta
 from harness.messages.blocks import block_field
 from harness.settings import WORKDIR
 from harness.tools.filesystem import safe_path
-from harness.ui.permission_prompt import ask_allow
+from harness.ui.permission_prompt import ask_permission
 
 HOOKS: dict[str, list] = {
     "UserPromptSubmit": [],
@@ -108,15 +108,19 @@ def permission_hook(block):
         if _DESTRUCTIVE_RE.search(command):
             _hook_print("[permission] destructive command", warn=True)
             _hook_print(f"  {command}")
-            choice = ask_allow(
+            response = ask_permission(
                 "  Allow? [y/N] ",
                 detail=command,
                 title="Allow destructive command?",
+                editable=True,
             )
-            if choice is None:
+            if response.decision == "cancel":
                 return "Permission denied: cancelled by user"
-            if not choice:
+            if not response.allowed:
                 return "Permission denied by user"
+            edited = response.value.strip()
+            if edited and edited != command:
+                tool_input["command"] = edited
     if name in ("write_file", "edit_file"):
         path = tool_input.get("path", "")
         try:
@@ -133,14 +137,14 @@ def permission_hook(block):
             return None
         if meta.get("destructive"):
             _hook_print(f"[permission] MCP destructive tool: {name}", warn=True)
-            choice = ask_allow(
+            response = ask_permission(
                 "  Allow? [y/N] ",
                 detail=name,
                 title="Allow MCP destructive tool?",
             )
-            if choice is None:
+            if response.decision == "cancel":
                 return "Permission denied: cancelled by user"
-            if not choice:
+            if not response.allowed:
                 return "Permission denied by user"
     return None
 

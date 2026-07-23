@@ -204,12 +204,15 @@ export HARNESS_RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 
 ## 4. 评测
 
+完整的分层指标、金标 schema 和 CI 建议见 [RAG 分层测试与评测](./rag-evaluation.md)。
+
 迷你语料：`evals/rag/fixtures/tiny_corpus/`  
 金标查询：`evals/rag/gold_queries.yaml`
 
 ```sh
-pytest tests/test_writing_mode.py tests/test_writing_guard.py \
-  tests/test_rag_bootstrap.py tests/test_rag_retrieval.py -q
+python main.py rag eval
+python main.py rag eval --output evals/results/rag/latest.json
+pytest tests/test_rag_*.py tests/test_file_mode.py tests/test_tui_m1.py -q
 ```
 
 Python API：
@@ -217,7 +220,7 @@ Python API：
 ```python
 from harness.rag.eval import run_eval
 report = run_eval("evals/rag/fixtures/tiny_corpus")
-# report["recall_at_k"], report["mrr"]
+# report["metrics"]["recall_at_5"], report["metrics"]["ndcg_at_5"]
 ```
 
 ---

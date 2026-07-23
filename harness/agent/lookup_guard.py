@@ -1,13 +1,12 @@
 """Hard guardrails for lookup-mode web fetch loops.
 
-Beyond the raw fetch budget, this guard catches thrash patterns that
-`RepeatGuard` misses (identical-only):
-
-* **Near-duplicate queries** — slightly reworded web_search (Jaccard).
+* **Optional hard fetch count** — off by default; set ``HARNESS_LOOKUP_FETCH_LIMIT``
+  to a positive int only if you want a hard cap.
+* **Near-duplicate queries** — Jaccard only against *successful* searches;
+  failed/empty searches may be reworded (exact same query still blocked).
 * **Per-host hammering** — many paths on the same site.
 * **Stale dimensions** — a single URL 404/robots bans that URL only;
-  global consecutive-stale is for soft failures (empty / irrelevant), not
-  hard URL failures (so one bad PDF does not kill all web).
+  soft-stale stops further *searches* (URL fetch still allowed).
 * **Block escalation** — consecutive blocked attempts latch a force-answer
   signal so the loop can strip tools instead of soft-nudge forever.
 """
@@ -59,13 +58,23 @@ LOOKUP_FORCE_ANSWER = (
 ResultKind = Literal["ok", "hard_fail", "soft_stale"]
 
 
-def lookup_fetch_limit() -> int:
-    raw = os.getenv("HARNESS_LOOKUP_FETCH_LIMIT", "6").strip()
+def lookup_fetch_limit() -> int | None:
+    """Optional hard cap on web tool calls per turn.
+
+    Default **None** (unlimited): Claude Code–style — no fixed fetch quota.
+    Set ``HARNESS_LOOKUP_FETCH_LIMIT`` to a positive int to re-enable a hard cap.
+    ``0`` / empty / negative → unlimited.
+    """
+    raw = os.getenv("HARNESS_LOOKUP_FETCH_LIMIT", "0").strip()
+    if not raw:
+        return None
     try:
         value = int(raw)
     except ValueError:
-        return 6
-    return max(1, value)
+        return None
+    if value <= 0:
+        return None
+    return value
 
 
 def lookup_stale_limit() -> int:
@@ -148,11 +157,34 @@ def is_web_fetch_tool(name: str, tool_input: dict | None = None) -> bool:
     )
 
 
-def is_low_value_fetch_result(output: str) -> bool:
-    return classify_fetch_result(output) != "ok"
+def is_low_value_fetch_result(output: str, tool_input: dict | None = None) -> bool:
+    return classify_fetch_result(output, tool_input=tool_input) != "ok"
 
 
-def classify_fetch_result(output: str) -> ResultKind:
+def _web_search_on_topic(query: str, output: str) -> bool:
+    """False when SERP is long but off-topic (keyword collision junk).
+
+    Pie Menus case: query asks for a 2015 academic paper; SO returned Blender
+    plugin pages that share \"Pie Menus\" / \"Better\" but miss distinctive
+    terms like \"linear\". Require the longest query tokens to appear in hits.
+    """
+    tokens = _query_tokens(query)
+    key = sorted(
+        (t for t in tokens if len(t) >= 4 and not t.isdigit()),
+        key=len,
+        reverse=True,
+    )
+    if len(key) < 2:
+        return len(output) >= 120
+    need = key[: min(3, len(key))]
+    low = output.lower()
+    hits = sum(1 for t in need if t in low)
+    return hits >= len(need)
+
+
+def classify_fetch_result(
+    output: str, *, tool_input: dict | None = None
+) -> ResultKind:
     """Split hard URL failures from soft/irrelevant stale.
 
     hard_fail → ban this URL/host only; do NOT burn global consecutive_stale.
@@ -170,6 +202,18 @@ def classify_fetch_result(output: str) -> ResultKind:
         return "soft_stale"
     if _OPENREVIEW_SHELL_RE.search(text) and len(text) < 1200:
         return "soft_stale"
+    # web_search SERP: long off-topic pages still count as soft_stale so the
+    # agent can reword (do not enter near-dup \"successful\" history).
+    query = _query_text(tool_input)
+    if query and (
+        low.startswith("web_search")
+        or " result(s):" in text[:100].lower()
+        or "<persisted-output" in low and "web_search" in low
+    ):
+        # Persisted preview may be short; if full body was inlined, check it.
+        body = text
+        if not _web_search_on_topic(query, body):
+            return "soft_stale"
     return "ok"
 
 
@@ -221,8 +265,12 @@ class LookupGuard:
         self._blocked_urls: set[str] = set()
         self._blocked_hosts: set[str] = set()
         self._host_counts: Counter[str] = Counter()
-        self._recent_queries: list[set[str]] = []
-        self._recent_query_texts: list[str] = []
+        # Near-dup Jaccard only against queries that returned useful results.
+        # Failed searches must be reformulable (Pie Menus: first miss → reword).
+        self._recent_ok_queries: list[set[str]] = []
+        self._recent_ok_query_texts: list[str] = []
+        # Exact query strings already attempted (any outcome) — ban identical retry.
+        self._tried_queries: set[str] = set()
         self.max_fetches = lookup_fetch_limit()
         self.max_stale = lookup_stale_limit()
         self.max_per_host = lookup_host_limit()
@@ -234,10 +282,14 @@ class LookupGuard:
             return False, ""
         if self.finalize_latched:
             return True, self._escalate_message()
-        if self.fetch_count >= self.max_fetches:
+        if self.max_fetches is not None and self.fetch_count >= self.max_fetches:
             return True, self._budget_message()
+        # Soft-stale budget: stop more *searches*, but still allow opening a
+        # concrete URL (换源). Pie Menus: three empty SERPs must not block ACM.
         if self.consecutive_stale >= self.max_stale:
-            return True, self._stale_message()
+            url = str((tool_input or {}).get("url", "")).strip()
+            if not url:
+                return True, self._stale_message()
         url_key = _url_key(tool_input)
         if url_key and url_key in self._blocked_urls:
             return True, self._url_block_message(url_key)
@@ -249,6 +301,9 @@ class LookupGuard:
             return True, self._host_quota_message(host_only)
         query = _query_text(tool_input)
         if query:
+            norm = query.lower().strip()
+            if norm in self._tried_queries:
+                return True, self._exact_query_message(query)
             dup = self._find_near_duplicate(query)
             if dup is not None:
                 return True, self._dup_message(dup, query)
@@ -270,10 +325,13 @@ class LookupGuard:
             self.consecutive_blocks = 0
 
     def _find_near_duplicate(self, query: str) -> str | None:
+        """Compare only against prior *successful* searches (not failed ones)."""
         tokens = _query_tokens(query)
         if not tokens:
             return None
-        for prev_tokens, prev_text in zip(self._recent_queries, self._recent_query_texts):
+        for prev_tokens, prev_text in zip(
+            self._recent_ok_queries, self._recent_ok_query_texts
+        ):
             sim = _jaccard(tokens, prev_tokens)
             if sim >= self.dup_threshold:
                 return prev_text
@@ -289,20 +347,24 @@ class LookupGuard:
             self._host_counts[host_only] += 1
         query = _query_text(tool_input)
         if query:
-            self._recent_queries.append(_query_tokens(query))
-            self._recent_query_texts.append(query)
-            if len(self._recent_queries) > 20:
-                self._recent_queries.pop(0)
-                self._recent_query_texts.pop(0)
+            # Remember exact attempt immediately; Jaccard list waits for ok result.
+            self._tried_queries.add(query.lower().strip())
 
     def note_result(self, name: str, tool_input: dict | None, output: str) -> None:
         if not self.active or not is_web_fetch_tool(name, tool_input):
             return
-        kind = classify_fetch_result(output)
+        kind = classify_fetch_result(output, tool_input=tool_input)
         url_key = _url_key(tool_input)
         host_only = _host_key(tool_input)
+        query = _query_text(tool_input)
         if kind == "ok":
             self.consecutive_stale = 0
+            if query:
+                self._recent_ok_queries.append(_query_tokens(query))
+                self._recent_ok_query_texts.append(query)
+                if len(self._recent_ok_queries) > 20:
+                    self._recent_ok_queries.pop(0)
+                    self._recent_ok_query_texts.pop(0)
             return
         if kind == "hard_fail":
             # Ban this URL (and host on robots/403/429); do NOT burn global stale.
@@ -316,6 +378,7 @@ class LookupGuard:
                 self._blocked_hosts.add(host_only)
             return
         # soft_stale — empty / irrelevant / failed search
+        # Do NOT add to near-dup history: agent must be free to reword (Pie Menus).
         self.consecutive_stale += 1
 
     def _budget_message(self) -> str:
@@ -327,8 +390,11 @@ class LookupGuard:
 
     def _stale_message(self) -> str:
         return (
-            f"[LookupGuard] Blocked: {self.consecutive_stale} consecutive web calls "
-            "returned no useful new information (empty / irrelevant results)."
+            f"[LookupGuard] Blocked: {self.consecutive_stale} consecutive web "
+            "searches/calls returned no useful new information. Do NOT search "
+            "again with similar queries — open a specific URL from clues you "
+            "have (arxiv / ACM / Wikipedia), or answer from evidence already "
+            "in this conversation."
             + _EVIDENCE_TAIL
         )
 
@@ -354,11 +420,19 @@ class LookupGuard:
             + _EVIDENCE_TAIL
         )
 
+    def _exact_query_message(self, query: str) -> str:
+        return (
+            f"[LookupGuard] Blocked: exact query already tried ({query!r}). "
+            "Change keywords substantially (add venue/year/author) or open a "
+            "known URL — do not paste the same search again."
+            + _EVIDENCE_TAIL
+        )
+
     def _dup_message(self, prev: str, current: str) -> str:
         return (
             "[LookupGuard] Blocked: this web_search is near-identical to a "
-            f"recent one ({prev!r} ≈ {current!r}). Change the query substantially, "
-            "fetch a DIFFERENT source, or answer from what you have."
+            f"recent *successful* one ({prev!r} ≈ {current!r}). Change the query "
+            "substantially, fetch a DIFFERENT source, or answer from what you have."
             + _EVIDENCE_TAIL
         )
 
