@@ -15,6 +15,10 @@ Rules:
 - If the excerpts do not contain enough information, say what is missing briefly.
 - Cite source filenames briefly (basename is enough).
 - Do not invent facts not supported by the excerpts.
+- Excerpts marked [图片] contain extracted caption/context and, when present, a
+  VLM description. Treat an unavailable visual description as unknown rather
+  than claiming to have inspected the image.
+- Excerpts marked [表格] are table data; preserve numerical values and units.
 - Keep the answer concise unless the user asks for detail.
 - Respond in the same language as the user's question."""
 
@@ -40,7 +44,11 @@ def _format_hit(index: int, hit: dict, *, remaining: int) -> tuple[str, int]:
     heading = hit.get("heading_path", "")
     # Prefer child snippet only — parent dump makes answers noisy.
     body = (hit.get("text") or "").strip()
-    header = f"[{index}] {source} › {heading}"
+    modality = hit.get("modality", "text")
+    page = f" › 第{hit['page']}页" if hit.get("page") else ""
+    header = f"[{index}] {source} › {heading}{page}" + (
+        f" › {modality}" if modality != "text" else ""
+    )
     blob = f"{header}\n{body}"
     if len(blob) <= remaining:
         return blob, remaining - len(blob)

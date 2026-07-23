@@ -52,6 +52,6 @@ def test_rag_add_copies_and_indexes(isolated_cwd):
     external = isolated_cwd / "external.md"
     external.write_text(SAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     text = run_rag_add(str(external))
-    assert "Copied to:" in text
+    assert "已导入:" in text
     assert (isolated_cwd / "files" / "external.md").exists()
     assert "Indexed corpus" in text

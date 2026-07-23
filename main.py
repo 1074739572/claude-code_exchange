@@ -63,7 +63,7 @@ def _parse_args() -> argparse.Namespace:
         "add",
         help="Copy an external document into files/ and re-index",
     )
-    rag_add.add_argument("file", help="Path to .md, .txt, or .docx")
+    rag_add.add_argument("file", help="Path to .md, .txt, .docx, or .pdf")
     rag_add.set_defaults(rag_handler="add")
 
     rag_docs = rag_sub.add_parser("docs", help="List indexed documents")

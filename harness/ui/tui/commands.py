@@ -68,10 +68,16 @@ def dispatch_slash(app: HarnessApp, query: str) -> bool:
         _handle_skill(app, q)
         return True
 
+    if _match(q, "/rag"):
+        if _busy_block(app):
+            return True
+        app._run_rag_command(q)
+        return True
+
     if q.startswith("/"):
         app.chat_append(
             "system",
-            f"`{q}` not in TUI yet. Built-in: /model /mode /resume /skill /clear /help /classic /quit. "
+            f"`{q}` not in TUI yet. Built-in: /model /mode /rag /resume /skill /clear /help /classic /quit. "
             "Or: python main.py --classic",
         )
         app.tui_set_status("Unknown command")
@@ -96,6 +102,10 @@ def _help_md() -> str:
 | `/model <id>` | Switch by id |
 | `/mode` | Pick mode (or click 🧭) |
 | `/mode <id>` | Switch mode |
+| `/rag` | RAG help |
+| `/rag index [path]` | Build or refresh document index |
+| `/rag docs` / `/rag select 1,3` | List or select document scope |
+| `/rag ask <question>` | One-shot document Q&A |
 | `/resume` | List sessions + picker |
 | `/resume <N>` | Switch to session N |
 | `/resume project` | Inject thesis state.json |

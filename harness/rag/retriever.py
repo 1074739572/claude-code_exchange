@@ -6,6 +6,7 @@ import os
 
 from harness.rag.lexical import search_chunks as bm25_search
 from harness.rag.rerank import rerank_hits
+from harness.rag.retrieval_policy import expand_lexical_query, finalize_hits
 from harness.rag.stores.vector import get_vector_store
 
 
@@ -86,17 +87,22 @@ def hybrid_search(
         "chapter": chapter,
         "include_captions": include_captions,
     }
+    lexical_query = expand_lexical_query(query)
+
+    def finish(hits: list[dict]) -> list[dict]:
+        reranked = rerank_hits(query, hits, top_k=candidate_k)
+        return finalize_hits(query, reranked, top_k=top_k)
 
     if mode == "bm25":
-        hits = bm25_search(query, top_k=candidate_k, **filters)
-        return rerank_hits(query, _annotate(hits, "bm25"), top_k=top_k)
+        hits = bm25_search(lexical_query, top_k=candidate_k, **filters)
+        return finish(_annotate(hits, "bm25"))
 
     if mode == "vector":
         query_vec = embedder.embed_query(query)
         hits = get_vector_store().search(query_vec, top_k=candidate_k, **filters)
-        return rerank_hits(query, hits, top_k=top_k)
+        return finish(hits)
 
-    bm25_hits = bm25_search(query, top_k=candidate_k, **filters)
+    bm25_hits = bm25_search(lexical_query, top_k=candidate_k, **filters)
     query_vec = embedder.embed_query(query)
     vector_hits = get_vector_store().search(query_vec, top_k=candidate_k, **filters)
 
@@ -108,4 +114,4 @@ def hybrid_search(
     fused = reciprocal_rank_fusion(
         [_annotate(bm25_hits, "bm25"), _annotate(vector_hits, "vector")]
     )
-    return rerank_hits(query, fused, top_k=top_k)
+    return finish(fused)

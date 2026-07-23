@@ -6,6 +6,7 @@ import os
 
 from harness.rag.ingest import ingest_path
 from harness.rag.pipeline import build_index, rag_status_dict, search
+from harness.rag.selection import get_active_sources
 
 
 def _hit_char_limit() -> int:
@@ -22,26 +23,37 @@ def _truncate_hit_text(text: str, limit: int) -> str:
     return text[: limit - 20] + "\n…[truncated]"
 
 
+def format_rag_index_result(result: dict, index_result: dict) -> str:
+    """Render a completed ingest/index operation without executing it again."""
+    lines = [
+        f"Indexed corpus: {result['root']}",
+        f"Files: {len(result['files'])}, chunks: {result['total_chunks']}, "
+        f"vectors: {index_result['vector_count']} "
+        f"(parents: {index_result.get('parent_chunks', 0)}, "
+        f"children: {index_result['indexed_chunks']})",
+        f"Retrieval: {index_result['retrieval_mode']} "
+        f"({index_result['embedding_backend']}: {index_result['embedding_model']})",
+    ]
+    for item in result["files"]:
+        modality_summary = ", ".join(
+            f"{name}={count}" for name, count in item.get("modalities", {}).items()
+        )
+        lines.append(
+            f"  - {item['source']}: {item['chunks']} chunks "
+            f"({item.get('parent_chunks', 0)} parent / "
+            f"{item.get('child_chunks', 0)} child), {item['chars']} chars"
+            f"{f'; {modality_summary}' if modality_summary else ''}"
+        )
+    for error in result.get("errors", []):
+        lines.append(f"  - skipped {error['source']}: {error['error']}")
+    return "\n".join(lines)
+
+
 def run_rag_index(path: str = "") -> str:
     try:
         result = ingest_path(path or None)
         index_result = build_index([item["source"] for item in result["files"]])
-        lines = [
-            f"Indexed corpus: {result['root']}",
-            f"Files: {len(result['files'])}, chunks: {result['total_chunks']}, "
-            f"vectors: {index_result['vector_count']} "
-            f"(parents: {index_result.get('parent_chunks', 0)}, "
-            f"children: {index_result['indexed_chunks']})",
-            f"Retrieval: {index_result['retrieval_mode']} "
-            f"({index_result['embedding_backend']}: {index_result['embedding_model']})",
-        ]
-        for item in result["files"]:
-            lines.append(
-                f"  - {item['source']}: {item['chunks']} chunks "
-                f"({item.get('parent_chunks', 0)} parent / "
-                f"{item.get('child_chunks', 0)} child), {item['chars']} chars"
-            )
-        return "\n".join(lines)
+        return format_rag_index_result(result, index_result)
     except Exception as exc:
         return f"rag_index failed: {type(exc).__name__}: {exc}"
 
@@ -54,10 +66,12 @@ def run_rag_search(
     include_captions: bool = True,
 ) -> str:
     try:
+        active_sources = None if source else get_active_sources()
         hits = search(
             query,
             top_k=max(1, min(top_k, 20)),
             source=source or None,
+            sources=active_sources,
             chapter=chapter or None,
             include_captions=include_captions,
         )
@@ -70,16 +84,21 @@ def run_rag_search(
         ]
         for index, hit in enumerate(hits, start=1):
             caption = " [图注]" if hit.get("is_caption") else ""
+            modality = hit.get("modality", "text")
+            modality_tag = "" if modality == "text" else f" [{modality}]"
+            page_tag = f" [第{hit['page']}页]" if hit.get("page") else ""
             retrieval = hit.get("retrieval") or hit.get("rerank") or "search"
             child_tag = ""
             if hit.get("parent_id"):
                 child_tag = f" [子块#{hit.get('child_index', 0)}]"
             lines.append(
                 f"[{index}] {hit.get('source')} › {hit.get('heading_path')}"
-                f"{caption}{child_tag} "
+                f"{caption}{modality_tag}{page_tag}{child_tag} "
                 f"(score={hit.get('score')}, via={retrieval})"
             )
             lines.append(_truncate_hit_text(hit["text"], hit_limit))
+            if hit.get("asset_uri"):
+                lines.append(f"资产：{hit['asset_uri']}")
             if hit.get("parent_text"):
                 lines.append("--- 父块（整节上下文）---")
                 lines.append(hit["parent_text"])
@@ -108,12 +127,26 @@ def run_rag_status() -> str:
             f"Corpus: {status.get('corpus_root') or '(unknown)'}",
             "Sources:",
         ]
+        lines.insert(3, f"PDF OCR: {status.get('pdf_ocr_mode', 'off')}")
+        if status.get("vision_model"):
+            vision = status.get("vision_stats", {})
+            lines.insert(
+                4,
+                "Vision: "
+                f"{status['vision_model']} (calls={vision.get('calls', 0)}, "
+                f"budget_skips={vision.get('skipped_budget', 0)}, "
+                f"failures={vision.get('failures', 0)})",
+            )
         for name, meta in sources.items():
+            modalities = ", ".join(
+                f"{modality}={count}" for modality, count in meta.get("modalities", {}).items()
+            )
             lines.append(
                 f"  - {name}: {meta.get('chunks', 0)} chunks "
                 f"({meta.get('parent_chunks', 0)} parent / "
                 f"{meta.get('child_chunks', 0)} child), "
                 f"{meta.get('chars', 0)} chars ({meta.get('suffix', '')})"
+                f"{f'; {modalities}' if modalities else ''}"
             )
         return "\n".join(lines)
     except Exception as exc:

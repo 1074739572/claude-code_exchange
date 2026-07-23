@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import os
-import re
 
 from harness.rag.lexical import tokenize
-
-TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}|\w+")
 
 
 def rerank_enabled() -> bool:

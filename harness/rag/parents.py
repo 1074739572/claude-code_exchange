@@ -50,6 +50,19 @@ def persist_parents(parents: list[dict]) -> None:
         _parent_map = merged
 
 
+def replace_parents(parents: list[dict]) -> None:
+    """Atomically replace parent context with the active index snapshot."""
+    global _parent_map
+    payload = build_parent_map(parents)
+    INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    PARENTS_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    with _lock:
+        _parent_map = payload
+
+
 def remove_sources_from_parents(sources: set[str]) -> None:
     global _parent_map
     if not sources:

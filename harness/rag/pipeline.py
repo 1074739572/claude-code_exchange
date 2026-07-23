@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 
 from harness.rag.chunking import merge_short_chunk_dicts
-from harness.rag.config import retrieval_settings
+from harness.rag.config import RETRIEVAL_SCHEMA_VERSION, retrieval_settings
 from harness.rag.embeddings.backends import get_embedding_backend
 from harness.rag.ingest import load_chunks_for_source, load_manifest, save_manifest
 from harness.rag.lexical import index_chunks as index_lexical
@@ -49,7 +49,10 @@ def build_index(sources: list[str] | None = None) -> dict:
     """Build lexical + vector indexes from chunk JSONL artifacts."""
     with _lock:
         manifest = load_manifest()
-        all_sources = sources or list(manifest.get("sources", {}).keys())
+        # A build is a snapshot of the manifest, not an incremental append.
+        # This prevents deleted sources from surviving in BM25, Chroma, or
+        # parent context artifacts.
+        all_sources = list(manifest.get("sources", {}).keys())
         if not all_sources:
             raise RuntimeError("No chunks to index. Run rag_index first.")
 
@@ -59,7 +62,7 @@ def build_index(sources: list[str] | None = None) -> dict:
 
         embedder = _get_embedder()
         store = get_vector_store()
-        store.delete_sources(set(all_sources))
+        store.reset()
 
         if searchable:
             embeddings = embedder.embed_documents(
@@ -74,6 +77,7 @@ def build_index(sources: list[str] | None = None) -> dict:
         manifest["embedding_backend"] = embedder.backend_id
         manifest["retrieval_mode"] = retrieval_settings().mode
         manifest["rerank_enabled"] = retrieval_settings().rerank
+        manifest["retrieval_schema_version"] = RETRIEVAL_SCHEMA_VERSION
         manifest["vector_count"] = vector_count
         manifest["indexed_chunks"] = lexical_result.get("indexed_chunks", len(searchable))
         manifest["parent_count"] = lexical_result.get("parent_chunks", 0)
@@ -123,4 +127,8 @@ def rag_status_dict() -> dict:
     status["retrieval_mode"] = settings.mode
     status["rerank_enabled"] = settings.rerank
     status["embedding"] = settings.embedding
+    manifest = load_manifest()
+    status["vision_model"] = manifest.get("vision_model")
+    status["vision_stats"] = manifest.get("vision_stats", {})
+    status["pdf_ocr_mode"] = manifest.get("pdf_ocr_mode", "off")
     return status

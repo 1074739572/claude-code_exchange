@@ -6,14 +6,14 @@ import json
 import math
 import re
 import threading
+from functools import lru_cache
 from pathlib import Path
 
 from harness.rag.config import INDEX_DIR, MANIFEST_PATH
 from harness.rag.ingest import load_chunks_for_source, load_manifest, save_manifest
 from harness.rag.parents import (
     is_searchable,
-    persist_parents,
-    remove_sources_from_parents,
+    replace_parents,
     split_chunks,
 )
 
@@ -26,11 +26,46 @@ _k1 = 1.5
 _b = 0.75
 
 CORPUS_PATH = INDEX_DIR / "corpus.json"
-TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}|\w+")
+TOKEN_RE = re.compile(r"[\u4e00-\u9fff]+|[a-z0-9_]+(?:[.-][a-z0-9_]+)*", re.IGNORECASE)
+CHINESE_RE = re.compile(r"^[\u4e00-\u9fff]+$")
+
+
+@lru_cache(maxsize=1)
+def _jieba_cut():
+    try:
+        import jieba
+    except ImportError:
+        return None
+    return jieba.lcut
 
 
 def tokenize(text: str) -> list[str]:
-    return TOKEN_RE.findall(text.lower())
+    """Tokenize mixed Chinese/Latin text for BM25 and deterministic embeddings.
+
+    Chinese terms use jieba when installed and always include character bigrams,
+    which keeps technical names and short query fragments recallable.
+    """
+    tokens: list[str] = []
+    cutter = _jieba_cut()
+    for run in TOKEN_RE.findall(text.lower()):
+        if not CHINESE_RE.match(run):
+            tokens.append(run)
+            continue
+        candidates: list[str] = []
+        if cutter is not None:
+            candidates.extend(part.strip() for part in cutter(run) if part.strip())
+        if len(run) == 1:
+            candidates.append(run)
+        else:
+            candidates.extend(run[index : index + 2] for index in range(len(run) - 1))
+            if len(run) <= 8:
+                candidates.append(run)
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                tokens.append(candidate)
+    return tokens
 
 
 def _build_index(chunks: list[dict]) -> None:
@@ -96,19 +131,14 @@ def index_chunks(sources: list[str] | None = None) -> dict:
         if not all_sources:
             raise RuntimeError("No chunks to index. Run rag_index first.")
 
-        existing: list[dict] = []
-        if CORPUS_PATH.exists():
-            existing = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
-            existing = [c for c in existing if c.get("source") not in all_sources]
-
-        merged = existing
+        # Rebuild from the active manifest snapshot. Incremental merging kept
+        # deleted corpus files searchable indefinitely.
+        merged: list[dict] = []
         for source in all_sources:
             merged.extend(load_chunks_for_source(source))
 
         parents, searchable = split_chunks(merged)
-        remove_sources_from_parents(set(all_sources))
-        if parents:
-            persist_parents(parents)
+        replace_parents(parents)
 
         _build_index(searchable)
         _persist(searchable)
@@ -190,6 +220,9 @@ def search_chunks(
                     "level": item.get("level", "child"),
                     "parent_id": item.get("parent_id"),
                     "child_index": item.get("child_index", 0),
+                    "modality": item.get("modality", "text"),
+                    "asset_uri": item.get("asset_uri", ""),
+                    "page": item.get("page", 0),
                 }
             )
         return hits

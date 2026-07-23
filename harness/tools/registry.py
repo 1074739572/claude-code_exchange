@@ -408,7 +408,9 @@ BUILTIN_TOOLS = [
     {
         "name": "rag_index",
         "description": (
-            "Index local reference documents for RAG (.md/.txt/.docx). "
+            "Index local reference documents for RAG (.md/.txt/.docx/.pdf). "
+            "PDF tables are indexed as text; images require opt-in VLM "
+            "configuration for visual descriptions and may incur API cost. "
             "Default path empty = files/样例; use path=\"files\" for the full corpus. "
             "Builds hybrid lexical + vector index under .rag/."
         ),
@@ -428,7 +430,8 @@ BUILTIN_TOOLS = [
         "description": (
             "Hybrid search (BM25 + embeddings) on child chunks; returns parent "
             "section context when available. Use before writing thesis/report "
-            "sections. Requires rag_index first."
+            "sections. By default respects the current /rag document selection; "
+            "an explicit source overrides that scope. Requires rag_index first."
         ),
         "input_schema": {
             "type": "object",

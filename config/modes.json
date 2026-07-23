@@ -36,7 +36,7 @@
     },
     "file": {
       "label": "文件 File",
-      "summary": "基于 files/ 本地文档问答：每句检索再答；进模式时选「指定文档」或「全部」",
+      "summary": "基于 files/ 本地文档问答：每句检索再答；默认全部，可用 /rag select 限定文档",
       "lead_model_hint": null,
       "enable_task": false,
       "disable_tools": [
@@ -50,7 +50,7 @@
         "project_set_chapter",
         "todo_write"
       ],
-      "prompt": "Execution mode: FILE (document Q&A)\n- The CLI routes normal messages to local RAG over files/ — you should not run a coding agent loop.\n- Answers must be grounded in retrieved excerpts only.\n- Scope is either selected documents or the full indexed corpus.\n- Switch to /mode direct for coding, editing, or non-document tasks."
+      "prompt": "Execution mode: FILE (document Q&A)\n- Classic CLI and Textual TUI route normal messages directly to local RAG over files/; no coding agent loop runs.\n- Answers must be grounded in retrieved excerpts only.\n- Scope defaults to the full indexed corpus and can be narrowed with /rag select or /rag pick.\n- Switch to /mode direct for coding, editing, or non-document tasks."
     }
   }
 }

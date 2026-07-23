@@ -115,6 +115,14 @@ def test_file_mode_empty_index_no_auto_reindex(isolated_cwd, monkeypatch):
     assert not (isolated_cwd / ".rag" / "index" / "corpus.json").exists()
 
 
+def test_file_mode_reports_stale_index(indexed_two_docs):
+    metrics = indexed_two_docs / "files" / "metrics.md"
+    metrics.write_text(metrics.read_text(encoding="utf-8") + "\n新增指标。", encoding="utf-8")
+    answer = handle_file_mode_turn("性能指标是什么？")
+    assert "索引已过期" in answer
+    assert "/rag index files" in answer
+
+
 def test_is_file_mode_flag(monkeypatch):
     from harness.modes import runtime as runtime_mod
 
@@ -130,3 +138,25 @@ def test_prompt_shows_file_tag(monkeypatch):
 
     monkeypatch.setattr(runtime_mod, "_current_mode", "file")
     assert "|file]" in format_cli_prompt()
+
+
+def test_tui_file_mode_bypasses_agent_loop(monkeypatch):
+    import harness.project.session_registry as registry_mod
+    import harness.rag.file_mode as file_mode_mod
+    import harness.ui.tui.session as session_mod
+
+    rendered: list[str] = []
+    monkeypatch.setattr(file_mode_mod, "is_file_mode", lambda: True)
+    monkeypatch.setattr(file_mode_mod, "handle_file_mode_turn", lambda query: "grounded answer")
+    monkeypatch.setattr(registry_mod, "touch_session_title_from_query", lambda query: None)
+    monkeypatch.setattr(session_mod.renderer, "user", lambda text: None)
+    monkeypatch.setattr(session_mod.renderer, "plain", rendered.append)
+    monkeypatch.setattr(
+        session_mod,
+        "agent_loop",
+        lambda *args, **kwargs: pytest.fail("file mode must bypass agent_loop"),
+    )
+
+    result = session_mod.run_agent_turn([], {}, "文档里写了什么？")
+    assert result["interrupted"] is False
+    assert rendered == ["grounded answer"]

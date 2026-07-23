@@ -10,6 +10,7 @@ from harness.settings import PACKAGE_ROOT, WORKDIR
 
 RAG_DIR = WORKDIR / ".rag"
 CHUNKS_DIR = RAG_DIR / "chunks"
+ASSETS_DIR = RAG_DIR / "assets"
 INDEX_DIR = RAG_DIR / "index"
 CHROMA_DIR = RAG_DIR / "chroma"
 MANIFEST_PATH = RAG_DIR / "manifest.json"
@@ -17,6 +18,7 @@ DEFAULT_CORPUS = PACKAGE_ROOT / "files" / "样例"
 
 EMBEDDING_MODEL = "hash-bow-256"
 COLLECTION_NAME = "corpus"
+RETRIEVAL_SCHEMA_VERSION = 2
 
 TARGET_CHUNK_CHARS = 600
 MAX_CHUNK_CHARS = 1200
@@ -24,7 +26,7 @@ MAX_PARENT_CHARS = 8000
 MIN_CHUNK_CHARS = 40
 OVERLAP_CHARS = 100
 
-SUPPORTED_SUFFIXES = {".md", ".txt", ".docx"}
+SUPPORTED_SUFFIXES = {".md", ".txt", ".docx", ".pdf"}
 
 
 @dataclass(frozen=True)

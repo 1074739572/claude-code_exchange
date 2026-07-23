@@ -116,6 +116,20 @@ class TuiImportTests(unittest.TestCase):
             BRIDGE.unbind()
             set_tui_active(False)
 
+    def test_slash_rag_routes_to_background_command(self):
+        from harness.ui.tui.commands import dispatch_slash
+
+        calls: list[str] = []
+
+        class FakeApp:
+            _busy = False
+
+            def _run_rag_command(self, query: str) -> None:
+                calls.append(query)
+
+        self.assertTrue(dispatch_slash(FakeApp(), "/rag status"))
+        self.assertEqual(calls, ["/rag status"])
+
     def test_ask_allow_uses_bridge_in_tui(self):
         from harness.ui.permission_prompt import ask_allow
         from harness.ui.tui.bridge import BRIDGE

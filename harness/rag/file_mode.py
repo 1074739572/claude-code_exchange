@@ -58,6 +58,14 @@ def _has_index() -> bool:
 def _index_ready() -> tuple[bool, str]:
     """File mode does not auto-rebuild index after /rag reset — user must /rag index."""
     if _has_index():
+        from harness.rag.bootstrap import index_refresh_reason
+
+        reason = index_refresh_reason()
+        if reason:
+            return False, (
+                f"索引已过期：{reason}。\n"
+                "请先 /rag index files，再提问。"
+            )
         return True, ""
     return False, (
         "索引为空（可能刚执行过 /rag reset）。\n"

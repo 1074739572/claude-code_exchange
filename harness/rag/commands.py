@@ -69,7 +69,7 @@ def _normalize_user_path(raw: str) -> Path:
 def run_rag_add(source: str) -> str:
     """Import a document into files/ (skip copy if already under files/) and re-index."""
     if not source.strip():
-        return "Usage: /rag add <path-to-file.docx|.md|.txt>"
+        return "Usage: /rag add <path-to-file.pdf|.docx|.md|.txt>"
 
     src = _normalize_user_path(source)
     if not src.exists():
@@ -141,7 +141,7 @@ def run_rag_index_command(path: str = "files") -> str:
     if not resolved.exists():
         return (
             f"rag index failed: path not found: {resolved}\n"
-            f"Create {_corpus_dir()} and add .md/.txt/.docx, "
+            f"Create {_corpus_dir()} and add .md/.txt/.docx/.pdf, "
             "or use /rag add <file>."
         )
 

@@ -35,6 +35,12 @@ def _hit_matches(hit: dict, case: dict) -> bool:
     expect_source = case.get("expect_source")
     if expect_source and hit.get("source") != expect_source:
         return False
+    expect_modality = case.get("expect_modality")
+    if expect_modality and hit.get("modality", "text") != expect_modality:
+        return False
+    expect_page = case.get("expect_page")
+    if expect_page is not None and int(hit.get("page", 0)) != int(expect_page):
+        return False
     return True
 
 

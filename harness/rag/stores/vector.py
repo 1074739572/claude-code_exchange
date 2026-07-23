@@ -124,6 +124,9 @@ class VectorStore:
                     "level": meta.get("level", "child"),
                     "parent_id": meta.get("parent_id") or None,
                     "child_index": int(meta.get("child_index", 0)),
+                    "modality": meta.get("modality", "text"),
+                    "asset_uri": meta.get("asset_uri", ""),
+                    "page": int(meta.get("page", 0)),
                     "retrieval": "vector",
                 }
             )
@@ -146,6 +149,9 @@ def _chunk_metadata(chunk: dict) -> dict:
         "level": chunk.get("level", "child"),
         "parent_id": chunk.get("parent_id") or "",
         "child_index": int(chunk.get("child_index", 0)),
+        "modality": chunk.get("modality", "text"),
+        "asset_uri": chunk.get("asset_uri", ""),
+        "page": int(chunk.get("page", 0)),
     }
 
 

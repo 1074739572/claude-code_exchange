@@ -12,6 +12,7 @@ from harness.rag.stores import vector as vector_mod
 @pytest.fixture()
 def rag_env(tmp_path, monkeypatch):
     import harness.rag.config as rag_config
+    import harness.rag.assets as assets_mod
     import harness.rag.ingest as ingest_mod
     import harness.rag.lexical as lexical_mod
     import harness.rag.tools as tools_mod
@@ -24,6 +25,7 @@ def rag_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rag_config, "RAG_DIR", rag_dir)
     monkeypatch.setattr(rag_config, "CHUNKS_DIR", rag_dir / "chunks")
+    monkeypatch.setattr(rag_config, "ASSETS_DIR", rag_dir / "assets")
     monkeypatch.setattr(rag_config, "INDEX_DIR", rag_dir / "index")
     monkeypatch.setattr(rag_config, "CHROMA_DIR", chroma_dir)
     monkeypatch.setattr(rag_config, "MANIFEST_PATH", rag_dir / "manifest.json")
@@ -34,6 +36,7 @@ def rag_env(tmp_path, monkeypatch):
         monkeypatch.setattr(mod, "MANIFEST_PATH", rag_dir / "manifest.json", raising=False)
 
     monkeypatch.setattr(ingest_mod, "CHUNKS_DIR", rag_dir / "chunks")
+    monkeypatch.setattr(assets_mod, "ASSETS_DIR", rag_dir / "assets")
     monkeypatch.setattr(lexical_mod, "INDEX_DIR", rag_dir / "index")
     monkeypatch.setattr(lexical_mod, "MANIFEST_PATH", rag_dir / "manifest.json")
     monkeypatch.setattr(lexical_mod, "CORPUS_PATH", rag_dir / "index" / "corpus.json")

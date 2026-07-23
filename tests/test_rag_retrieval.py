@@ -7,7 +7,13 @@ import pytest
 from harness.rag.bootstrap import ensure_rag_indexed
 from harness.rag.chunking import LEVEL_CHILD, LEVEL_PARENT, chunk_markdown, merge_short_chunks
 from harness.rag.eval import run_eval
+from harness.rag.lexical import tokenize
 from harness.rag.pipeline import search
+from harness.rag.retrieval_policy import (
+    expand_lexical_query,
+    finalize_hits,
+    preferred_modalities,
+)
 from harness.rag.retriever import reciprocal_rank_fusion
 from harness.rag.tools import run_rag_search
 from tests.rag_fixtures import rag_env  # noqa: F401
@@ -34,12 +40,62 @@ def test_hybrid_search_metrics_source_filter(indexed_corpus):
     assert "FY-4" in text or "性能" in text
 
 
+def test_agent_rag_search_respects_selected_document(indexed_corpus):
+    from harness.rag.selection import set_selection
+
+    set_selection(["metrics.md"])
+    text = run_rag_search("性能指标 FY-4 全通道")
+    assert "metrics.md" in text
+    assert "sample_report.md" not in text
+
+
 def test_rrf_merges_lists():
     bm25 = [{"id": "a", "text": "alpha", "score": 1.0}]
     vector = [{"id": "b", "text": "beta", "score": 0.9}]
     fused = reciprocal_rank_fusion([bm25, vector])
     assert len(fused) == 2
     assert fused[0]["id"] in {"a", "b"}
+
+
+def test_chinese_tokenizer_supports_partial_technical_queries():
+    tokens = tokenize("全通道性能指标增长趋势")
+    assert "性能" in tokens
+    assert "指标" in tokens
+    assert "趋势" in tokens
+
+
+def test_query_expansion_and_modality_routing():
+    expanded = expand_lexical_query("交付数量增长趋势")
+    assert "总数" in expanded
+    assert "同比" in expanded
+    assert preferred_modalities("表中数量是多少") == {"table"}
+    assert preferred_modalities("图中曲线趋势如何") == {"image"}
+
+
+def test_final_policy_boosts_table_and_deduplicates_page(monkeypatch):
+    monkeypatch.setenv("HARNESS_RAG_MODALITY_BONUS", "0.2")
+    hits = [
+        {"id": "text", "text": "交付数量 12", "score": 1.0, "modality": "text"},
+        {
+            "id": "table",
+            "text": "| 交付数量 | 12 |",
+            "score": 0.95,
+            "modality": "table",
+            "source": "a.pdf",
+            "page": 2,
+        },
+        {
+            "id": "duplicate",
+            "text": "| 交付数量 | 12 |",
+            "score": 0.94,
+            "modality": "table",
+            "source": "a.pdf",
+            "page": 2,
+        },
+    ]
+    result = finalize_hits("表中交付数量是多少", hits, top_k=3)
+    assert result[0]["id"] == "table"
+    assert [hit["id"] for hit in result].count("duplicate") == 0
 
 
 def test_merge_short_chunks_combines_neighbors():

@@ -619,3 +619,27 @@ class HarnessApp(App[None]):
                     self.call_from_thread(self.exit)
                 except Exception:
                     pass
+
+    @work(thread=True, exclusive=True, group="agent")
+    def _run_rag_command(self, query: str) -> None:
+        """Run potentially expensive /rag commands without freezing Textual."""
+        if not self._worker_lock.acquire(blocking=False):
+            BRIDGE.push_warn("Another turn is still running")
+            return
+        from harness.models import get_model, model_label
+
+        BRIDGE.reset_turn(user_query=query, model=model_label(get_model()))
+        BRIDGE.set_busy(True)
+        BRIDGE.push_status("Running RAG command…")
+        try:
+            from harness.rag.commands import run_rag_cli_command
+
+            result = run_rag_cli_command(query)
+            BRIDGE.push_final(result)
+            BRIDGE.seal_turn_bubbles()
+            BRIDGE.push_status("Ready")
+        except Exception as exc:
+            BRIDGE.push_warn(f"RAG command failed: {type(exc).__name__}: {exc}")
+        finally:
+            BRIDGE.set_busy(False)
+            self._worker_lock.release()

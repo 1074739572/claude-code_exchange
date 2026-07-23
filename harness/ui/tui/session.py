@@ -27,6 +27,23 @@ def run_agent_turn(history: list, context: dict, query: str) -> dict:
     BRIDGE.set_busy(True)
     BRIDGE.push_status("Running… (Esc / Stop)")
 
+    from harness.rag.file_mode import handle_file_mode_turn, is_file_mode
+
+    if is_file_mode():
+        touch_session_title_from_query(query)
+        renderer.user(query)
+        renderer.plain(handle_file_mode_turn(query))
+        BRIDGE.seal_turn_bubbles()
+        BRIDGE.push_status("Ready")
+        BRIDGE.set_busy(False)
+        BRIDGE.refresh_usage()
+        return {
+            "interrupted": False,
+            "redo_query": None,
+            "message": "",
+            "context": context,
+        }
+
     hook_result = trigger_hooks("UserPromptSubmit", query)
     model_query = hook_result if isinstance(hook_result, str) else query
 
